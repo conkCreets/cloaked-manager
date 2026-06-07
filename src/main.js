@@ -1,5 +1,4 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
-const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs   = require('fs');
 const { spawn } = require('child_process');
@@ -8,6 +7,7 @@ const Store = require('electron-store');
 const store = new Store({ encryptionKey: 'cloaked-manager-local-key' });
 
 let mainWindow;
+let autoUpdater; // loaded lazily inside app.whenReady — electron-updater needs app to be ready
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -19,6 +19,31 @@ function createWindow() {
     }
   });
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
+}
+
+function initAutoUpdater() {
+  autoUpdater = require('electron-updater').autoUpdater;
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('checking-for-update', () => {
+    if (mainWindow) mainWindow.webContents.send('update-status', { type: 'checking' });
+  });
+  autoUpdater.on('update-available', info => {
+    if (mainWindow) mainWindow.webContents.send('update-status', { type: 'available', version: info.version, releaseNotes: info.releaseNotes });
+  });
+  autoUpdater.on('update-not-available', () => {
+    if (mainWindow) mainWindow.webContents.send('update-status', { type: 'not-available' });
+  });
+  autoUpdater.on('download-progress', progress => {
+    if (mainWindow) mainWindow.webContents.send('download-progress', progress);
+  });
+  autoUpdater.on('update-downloaded', info => {
+    if (mainWindow) mainWindow.webContents.send('update-status', { type: 'downloaded', version: info.version });
+  });
+  autoUpdater.on('error', err => {
+    if (mainWindow) mainWindow.webContents.send('update-status', { type: 'error', message: err.message });
+  });
 }
 
 // ── Playwright Chromium first-launch check ────────────────────────────────────
@@ -40,7 +65,6 @@ async function ensurePlaywrightChromium() {
   mainWindow.webContents.send('playwright-status', { stage: 'installing', message: 'Setting up browser — this only happens once…' });
 
   await new Promise((resolve) => {
-    // Works in both dev and packaged (playwright is in asarUnpack)
     let playwrightCli;
     try { playwrightCli = require.resolve('playwright/cli'); } catch (_) { playwrightCli = require.resolve('playwright-core/cli'); }
 
@@ -61,33 +85,10 @@ async function ensurePlaywrightChromium() {
   });
 }
 
-// ── Auto-updater setup ────────────────────────────────────────────────────────
-autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = true;
-
-autoUpdater.on('checking-for-update', () => {
-  if (mainWindow) mainWindow.webContents.send('update-status', { type: 'checking' });
-});
-autoUpdater.on('update-available', info => {
-  if (mainWindow) mainWindow.webContents.send('update-status', { type: 'available', version: info.version, releaseNotes: info.releaseNotes });
-});
-autoUpdater.on('update-not-available', () => {
-  if (mainWindow) mainWindow.webContents.send('update-status', { type: 'not-available' });
-});
-autoUpdater.on('download-progress', progress => {
-  if (mainWindow) mainWindow.webContents.send('download-progress', progress);
-});
-autoUpdater.on('update-downloaded', info => {
-  if (mainWindow) mainWindow.webContents.send('update-status', { type: 'downloaded', version: info.version });
-});
-autoUpdater.on('error', err => {
-  if (mainWindow) mainWindow.webContents.send('update-status', { type: 'error', message: err.message });
-});
-
 app.whenReady().then(async () => {
+  initAutoUpdater();
   createWindow();
 
-  // Wait for renderer to load before sending IPC events
   mainWindow.webContents.once('did-finish-load', async () => {
     await ensurePlaywrightChromium();
 
@@ -118,6 +119,17 @@ ipcMain.on('restart-and-install', () => autoUpdater.quitAndInstall());
 // ── Credentials ───────────────────────────────────────────────────────────────
 ipcMain.handle('save-credentials', (_e, creds) => { store.set('credentials', creds); return { ok: true }; });
 ipcMain.handle('load-credentials', ()           => store.get('credentials', null));
+
+// ── Session ───────────────────────────────────────────────────────────────────
+ipcMain.handle('clear-session', () => {
+  const sessionPath = path.join(app.getPath('userData'), 'session-state.json');
+  try { fs.unlinkSync(sessionPath); } catch (_) {}
+  return { ok: true };
+});
+
+// ── Aliases ───────────────────────────────────────────────────────────────────
+ipcMain.handle('save-aliases', (_e, a) => { store.set('aliases', a); return { ok: true }; });
+ipcMain.handle('load-aliases', ()       => store.get('aliases', []));
 
 // ── Mappings ──────────────────────────────────────────────────────────────────
 ipcMain.handle('save-mappings', (_e, m) => { store.set('mappings', m); return { ok: true }; });
@@ -164,7 +176,7 @@ ipcMain.on('open-external', (_e, url) => shell.openExternal(url));
 // panel: 'sync' | 'creator' | 'sms'
 // level: 'info' | 'success' | 'warning' | 'error' | 'verbose'
 function dbg(panel, level, message) {
-  if (!mainWindow) return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send('debug-log', {
     panel,
     level,
@@ -174,7 +186,7 @@ function dbg(panel, level, message) {
 }
 
 // ── Shared browser launcher (fingerprint hardened) ────────────────────────────
-async function launchBrowser(mode, panel) {
+async function launchBrowser(mode, panel, sessionPath = null) {
   dbg(panel, 'info', `Launching browser in ${mode} mode…`);
   const { chromium } = require('playwright');
   const browser = await chromium.launch({
@@ -182,11 +194,16 @@ async function launchBrowser(mode, panel) {
     args: mode === 'hidden' ? ['--window-position=-10000,-10000', '--window-size=1280,900'] : []
   });
   dbg(panel, 'success', 'Browser launched successfully');
-  const context = await browser.newContext({
+  const contextOptions = {
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     viewport: { width: 1280, height: 900 },
     locale: 'en-US', timezoneId: 'America/New_York', permissions: []
-  });
+  };
+  if (sessionPath && fs.existsSync(sessionPath)) {
+    contextOptions.storageState = sessionPath;
+    dbg(panel, 'info', 'Restoring saved session state…');
+  }
+  const context = await browser.newContext(contextOptions);
   await context.addInitScript(() => {
     Object.defineProperty(navigator, 'webdriver',  { get: () => undefined });
     Object.defineProperty(navigator, 'plugins',    { get: () => [1, 2, 3] });
@@ -200,108 +217,54 @@ async function launchBrowser(mode, panel) {
 // ── Login helper (shared by scraper + creator) ────────────────────────────────
 async function loginToCloaked(page, identifier, password, panel) {
   dbg(panel, 'info', `Navigating to https://my.cloaked.com/auth/login…`);
-  await page.goto('https://my.cloaked.com/auth/login', { waitUntil: 'networkidle', timeout: 30000 });
-  dbg(panel, 'success', `Page loaded — title: "${await page.title()}"`);
+  await page.goto('https://my.cloaked.com/auth/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
+  dbg(panel, 'success', `Page loaded — URL: ${page.url()}`);
 
-  // Cloaked may show a loading/splash screen before the login form renders.
-  // Wait up to 15s for ANY input to appear on the page first.
-  dbg(panel, 'info', 'Waiting for any input to appear on page (up to 15s)…');
-  try {
-    await page.waitForSelector('input', { timeout: 15000 });
-    dbg(panel, 'success', 'At least one input found on page');
-  } catch (e) {
-    const title = await page.title().catch(() => 'unknown');
-    const url   = page.url();
-    const text  = await page.evaluate(() => document.body.innerText.substring(0, 300)).catch(() => '');
-    dbg(panel, 'error', `No inputs appeared after 15s. URL: ${url} | Title: "${title}"`);
-    dbg(panel, 'verbose', `Page text preview: ${text}`);
-    throw new Error(`Login page did not render any inputs. URL: ${url}`);
-  }
+  // The login form lives inside a cross-origin iframe at secure.cloaked.com.
+  // page.locator() pierces shadow DOM but NOT cross-origin iframes — must use frameLocator().
+  dbg(panel, 'info', 'Waiting for auth iframe (secure.cloaked.com)…');
+  await page.waitForSelector('iframe[src*="secure.cloaked.com"]', { timeout: 15000 });
+  const frame = page.frameLocator('iframe[src*="secure.cloaked.com"]');
+  dbg(panel, 'success', 'Auth iframe found');
 
-  // Extra wait for JS-rendered forms (Alpine.js / React may need a moment)
-  await page.waitForTimeout(5000);
+  // ── Step 1: Username ──────────────────────────────────────────────────────
+  const usernameLocator = frame.locator('input#username, input[name="username"]').first();
+  dbg(panel, 'info', 'Waiting for username input inside iframe…');
+  await usernameLocator.waitFor({ state: 'visible', timeout: 20000 });
+  dbg(panel, 'success', 'Username input found');
 
-  // Log ALL inputs currently on the page for diagnostics
-  const allInputs = await page.evaluate(() =>
-    [...document.querySelectorAll('input')].map(i =>
-      `type="${i.type}" name="${i.name}" id="${i.id}" placeholder="${i.placeholder}"`
-    )
-  );
-  dbg(panel, 'verbose', `All inputs on page: ${allInputs.join(' | ') || 'none'}`);
-
-  // ── Step 1: Fill identifier ───────────────────────────────────────────────
-  dbg(panel, 'info', 'Looking for identifier input (name="username" or id="username")…');
-  const identifierInput = await page.$('input[name="username"], input[id="username"]');
-
-  if (!identifierInput) {
-    // Fallback — try any visible non-password input
-    dbg(panel, 'warning', 'username input not found — trying fallback: first visible non-password input');
-    const fallback = await page.$('input:not([type="password"]):not([type="hidden"])');
-    if (!fallback) {
-      dbg(panel, 'error', `No usable input found. All inputs: ${allInputs.join(' | ') || 'none'}`);
-      throw new Error(`Could not find identifier input. Inputs on page: ${allInputs.join(', ') || 'none'}`);
-    }
-    dbg(panel, 'warning', 'Using fallback input — this may not be the correct field');
-    await fallback.click();
-    await page.waitForTimeout(200);
-    for (const char of identifier) {
-      await fallback.type(char, { delay: 40 + Math.random() * 60 });
-    }
-    dbg(panel, 'info', 'Identifier typed via fallback — pressing Enter');
-    await page.waitForTimeout(400 + Math.random() * 300);
-    await Promise.all([page.waitForTimeout(2000), fallback.press('Enter')]);
-  } else {
-    dbg(panel, 'success', 'Identifier input found');
-    await page.waitForTimeout(800 + Math.random() * 400);
-    await identifierInput.click();
-    await page.waitForTimeout(200);
-    dbg(panel, 'info', `Typing identifier (${identifier.length} chars)…`);
-    for (const char of identifier) {
-      await identifierInput.type(char, { delay: 40 + Math.random() * 60 });
-    }
-    dbg(panel, 'success', 'Identifier typed — pressing Enter');
-    await page.waitForTimeout(400 + Math.random() * 300);
-    await Promise.all([page.waitForTimeout(2000), identifierInput.press('Enter')]);
-  }
+  await page.waitForTimeout(800 + Math.random() * 400);
+  await usernameLocator.click();
+  await page.waitForTimeout(200);
+  dbg(panel, 'info', `Typing identifier (${identifier.length} chars)…`);
+  await usernameLocator.pressSequentially(identifier, { delay: 90 + Math.random() * 80 });
+  dbg(panel, 'success', 'Identifier typed — pressing Enter');
+  await page.waitForTimeout(400 + Math.random() * 300);
+  await usernameLocator.press('Enter');
+  await page.waitForTimeout(2000);
 
   // ── Step 2: Password ──────────────────────────────────────────────────────
-  dbg(panel, 'info', 'Waiting for password input (up to 15s)…');
-  try {
-    await page.waitForSelector('input[type="password"]', { timeout: 15000 });
-    dbg(panel, 'success', 'Password input found');
-  } catch (e) {
-    const inputs = await page.evaluate(() =>
-      [...document.querySelectorAll('input')].map(i =>
-        `type="${i.type}" name="${i.name}" id="${i.id}"`
-      )
-    );
-    const pageText = await page.evaluate(() => document.body.innerText.substring(0, 300));
-    dbg(panel, 'error', `Password input NOT found. Inputs: ${inputs.join(' | ') || 'none'}`);
-    dbg(panel, 'verbose', `Page text: ${pageText}`);
-    throw new Error(`Password field not found after submitting identifier. Inputs: ${inputs.join(', ') || 'none'}`);
-  }
+  const passwordLocator = frame.locator('input[type="password"], input[name="password"]').first();
+  dbg(panel, 'info', 'Waiting for password input…');
+  await passwordLocator.waitFor({ state: 'visible', timeout: 15000 });
+  dbg(panel, 'success', 'Password input found');
 
   await page.waitForTimeout(600 + Math.random() * 400);
-  const passInput = await page.$('input[type="password"]');
-  dbg(panel, 'info', `Typing password (${password.length} chars)…`);
-  await passInput.click();
+  await passwordLocator.click();
   await page.waitForTimeout(200);
-  for (const char of password) {
-    await passInput.type(char, { delay: 40 + Math.random() * 60 });
-  }
+  dbg(panel, 'info', `Typing password (${password.length} chars)…`);
+  await passwordLocator.pressSequentially(password, { delay: 90 + Math.random() * 80 });
   dbg(panel, 'success', 'Password typed — pressing Enter');
   await page.waitForTimeout(400 + Math.random() * 300);
   await Promise.all([
-    page.waitForNavigation({ waitUntil: 'networkidle', timeout: 30000 }).catch((e) => {
-      dbg(panel, 'warning', `Navigation after password did not fire: ${e.message}`);
+    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(e => {
+      dbg(panel, 'warning', `Navigation after password: ${e.message}`);
     }),
-    passInput.press('Enter')
+    passwordLocator.press('Enter')
   ]);
 
   await page.waitForTimeout(3000);
-  const postLoginTitle = await page.title().catch(() => 'unknown');
-  const postLoginUrl   = page.url();
-  dbg(panel, 'success', `Login complete — URL: ${postLoginUrl} | Title: "${postLoginTitle}"`);
+  dbg(panel, 'success', `Login complete — URL: ${page.url()} | Title: "${await page.title().catch(() => 'unknown')}"`);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -324,56 +287,147 @@ ipcMain.handle('sync-cloaked', async (_e, { email, password }) => {
     await page.waitForTimeout(400);
   }
 
+  const sessionPath = path.join(app.getPath('userData'), 'session-state.json');
+
   try {
     const mode = store.get('browserMode', 'headless');
     dbg('sync', 'info', `=== SYNC STARTED === mode: ${mode}`);
     mainWindow.webContents.send('sync-status', { stage: 'launching', message: 'Launching scraper browser…' });
 
-    const { browser: b, context } = await launchBrowser(mode, 'sync');
+    const hasSession = fs.existsSync(sessionPath);
+    const { browser: b, context } = await launchBrowser(mode, 'sync', hasSession ? sessionPath : null);
     browser = b;
+
+    let browserClosedByUser = false;
+    browser.on('disconnected', () => {
+      browserClosedByUser = true;
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      dbg('sync', 'warning', 'Browser window closed — aborting sync');
+      mainWindow.webContents.send('sync-status', { stage: 'error', message: 'Browser closed — sync aborted' });
+    });
+
     const page = await context.newPage();
 
-    mainWindow.webContents.send('sync-status', { stage: 'logging-in', message: 'Logging in…' });
-    await loginToCloaked(page, email, password, 'sync');
+    if (hasSession) {
+      dbg('sync', 'info', 'Checking saved session…');
+      mainWindow.webContents.send('sync-status', { stage: 'logging-in', message: 'Restoring session…' });
+      await page.goto('https://my.cloaked.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      if (page.url().includes('/auth/')) {
+        dbg('sync', 'warning', 'Session expired — logging in again…');
+        mainWindow.webContents.send('sync-status', { stage: 'logging-in', message: 'Session expired, logging in…' });
+        await loginToCloaked(page, email, password, 'sync');
+        await context.storageState({ path: sessionPath });
+        dbg('sync', 'success', 'New session saved');
+      } else {
+        dbg('sync', 'success', `Session valid — login skipped (URL: ${page.url()})`);
+      }
+    } else {
+      mainWindow.webContents.send('sync-status', { stage: 'logging-in', message: 'Logging in…' });
+      await loginToCloaked(page, email, password, 'sync');
+      await context.storageState({ path: sessionPath });
+      dbg('sync', 'success', 'Session saved — future syncs will skip login');
+    }
     await capture(page, 'post-login');
 
+    mainWindow.webContents.send('sync-status', { stage: 'fetching', message: 'Enabling Advanced Mode…' });
+    await capture(page, 'post-login');
+
+    // ── Enable Advanced Mode (required every page load — not persisted by Cloaked) ──
+    dbg('sync', 'info', 'Waiting for Advanced Mode toggle to appear…');
+    const advancedToggle = page.locator('button.navigation-advanced-toggle__button-toggle[aria-label="Toggle"]');
+    try {
+      await advancedToggle.waitFor({ state: 'visible', timeout: 15000 });
+    } catch {
+      throw new Error('Advanced features toggle not found after 15s — cannot scrape aliases without Advanced Mode');
+    }
+    const isAdvancedOn = await advancedToggle.getAttribute('aria-pressed').catch(() => 'false');
+    if (isAdvancedOn === 'true') {
+      dbg('sync', 'info', 'Advanced Mode already on');
+    } else {
+      await advancedToggle.click();
+      dbg('sync', 'success', 'Advanced features toggle clicked — waiting for confirmation modal…');
+
+      const tryAdvancedBtn = page.locator('button.advanced-mode-modal__button.base-button--primary-fill');
+      try {
+        await tryAdvancedBtn.waitFor({ state: 'visible', timeout: 5000 });
+      } catch {
+        throw new Error('"Try Advanced" button not found — cannot continue without Advanced Mode');
+      }
+      await tryAdvancedBtn.click();
+      dbg('sync', 'success', '"Try Advanced" confirmed');
+      await page.waitForTimeout(1500);
+    }
+
+    // ── Navigate to All Identities tab ─────────────────────────────────────
+    dbg('sync', 'info', 'Looking for All Identities tab…');
+    try {
+      const allIdentitiesTab = page.locator([
+        'a:has-text("All Identities")',
+        'button:has-text("All Identities")',
+        '[role="tab"]:has-text("All Identities")',
+      ].join(', ')).first();
+
+      if (await allIdentitiesTab.count() > 0) {
+        await allIdentitiesTab.click();
+        dbg('sync', 'success', 'Clicked All Identities tab');
+        await page.waitForTimeout(2000);
+      } else {
+        dbg('sync', 'warning', 'All Identities tab not found — scraping current view');
+      }
+    } catch (e) {
+      dbg('sync', 'warning', `All Identities navigation error: ${e.message}`);
+    }
+
     mainWindow.webContents.send('sync-status', { stage: 'fetching', message: 'Fetching aliases…' });
-    await capture(page, 'dashboard-loaded');
+    await capture(page, 'identities-page');
+    await page.waitForTimeout(1500);
 
     // ── Alias scraping ──────────────────────────────────────────────────────
-    dbg('sync', 'info', 'Scraping alias cards from dashboard…');
-    dbg('sync', 'verbose', 'Trying selectors: [data-testid*="identity"], [class*="identity"], [class*="Identity"], [class*="alias"], [class*="Alias"]');
+    dbg('sync', 'info', 'Scraping identity cards…');
 
     const { aliases, aliasDebug } = await page.evaluate(() => {
       const results = [];
       const debug   = [];
-      const cards   = document.querySelectorAll('[data-testid*="identity"],[class*="identity"],[class*="Identity"],[class*="alias"],[class*="Alias"]');
-      debug.push(`Found ${cards.length} candidate card elements`);
-      cards.forEach((card, i) => {
-        const text       = card.innerText || '';
-        const emailMatch = text.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
-        const phoneMatch = text.match(/(\+?1?\s?)?(\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4})/);
-        const nameEl     = card.querySelector('h2,h3,h4,[class*="name"],[class*="title"],strong');
-        if (emailMatch || phoneMatch) {
-          results.push({
-            id: `alias-${i}`,
-            name: nameEl ? nameEl.innerText.trim() : `Identity ${i + 1}`,
-            email: emailMatch ? emailMatch[0] : null,
-            phone: phoneMatch ? phoneMatch[0].trim() : null
-          });
-          debug.push(`Card ${i}: email=${emailMatch?.[0]||'—'} phone=${phoneMatch?.[0]||'—'}`);
+      const seen    = new Set();
+
+      const cloakedEmailRe = /[a-zA-Z0-9._%+\-]+@cloaked\.(app|com)/i;
+
+      // Each identity is a div.item with a numeric id
+      const items = [...document.querySelectorAll('div.item[id]')]
+        .filter(el => /^\d+$/.test(el.id));
+      debug.push(`Found ${items.length} identity card(s)`);
+
+      items.forEach((item, i) => {
+        // Name: h1.base-text--callout-emphasized holds the identity name
+        const h1     = item.querySelector('h1.base-text--callout-emphasized');
+        const cardEl = item.querySelector('[aria-label^="Cloak card for "]');
+        const name   = h1?.innerText.trim()
+          || cardEl?.getAttribute('aria-label').replace('Cloak card for ', '').trim()
+          || `Identity ${i + 1}`;
+
+        // Each card has two div.base-text--footnote-regular — first is empty,
+        // second has the phone number. Pick the first non-empty one.
+        const phoneEls = [...item.querySelectorAll('div.base-text--footnote-regular')];
+        const phone    = phoneEls.map(el => el.innerText.trim()).find(t => t.length > 0) || null;
+
+        // Email: some identities use a @cloaked.app address instead of a phone
+        const emailMatch = (item.innerText || '').match(cloakedEmailRe);
+        const email      = emailMatch ? emailMatch[0].toLowerCase() : null;
+
+        const key = phone || email || name;
+        if (phone || email) {
+          if (!seen.has(key)) {
+            seen.add(key);
+            results.push({ id: item.id, name, email, phone });
+            debug.push(`[${item.id}] "${name}": phone=${phone||'—'} email=${email||'—'}`);
+          } else {
+            debug.push(`[${item.id}] "${name}": duplicate (${key}) skipped`);
+          }
         } else {
-          debug.push(`Card ${i}: no email/phone found in text (first 80 chars: "${text.substring(0,80)}")`);
+          debug.push(`[${item.id}] "${name}": no phone or email found`);
         }
       });
-      // Fallback
-      if (results.length === 0) {
-        debug.push('No cards matched — trying full-page text fallback for @cloaked.app/@cloaked.com emails');
-        const emails = [...document.body.innerText.matchAll(/[a-zA-Z0-9._%+\-]+@cloaked\.(app|com)/g)].map(m => m[0]);
-        const unique  = [...new Set(emails)];
-        debug.push(`Fallback found ${unique.length} unique cloaked emails`);
-        unique.forEach((em, i) => results.push({ id: `alias-${i}`, name: `Alias ${i+1}`, email: em, phone: null }));
-      }
+
       return { aliases: results, aliasDebug: debug };
     });
 
@@ -417,17 +471,28 @@ ipcMain.handle('sync-cloaked', async (_e, { email, password }) => {
     }
 
     await capture(page, 'done');
-    await browser.close();
+    if (mode === 'visible') {
+      dbg('sync', 'info', 'Visible mode — browser left open for inspection. Close it manually when done.');
+    } else {
+      await browser.close();
+    }
     dbg('sync', 'success', `=== SYNC COMPLETE === aliases: ${aliases.length} codes: ${codes.length}`);
     mainWindow.webContents.send('sync-status', { stage: 'done', message: 'Sync complete!' });
     return { ok: true, aliases, codes, syncedAt: new Date().toISOString() };
 
   } catch (err) {
-    dbg('sync', 'error', `=== SYNC FAILED === ${err.message}`);
-    dbg('sync', 'verbose', err.stack || '(no stack trace)');
-    if (browser) await browser.close().catch(() => {});
-    mainWindow.webContents.send('sync-status', { stage: 'error', message: err.message });
-    return { ok: false, error: err.message };
+    const closedByUser = browserClosedByUser ||
+      /target closed|browser.*disconnected|target page.*closed/i.test(err.message);
+    if (closedByUser) {
+      dbg('sync', 'warning', '=== SYNC ABORTED — browser closed by user ===');
+      // sync-status already sent by the disconnected handler
+    } else {
+      dbg('sync', 'error', `=== SYNC FAILED === ${err.message}`);
+      dbg('sync', 'verbose', err.stack || '(no stack trace)');
+      mainWindow.webContents.send('sync-status', { stage: 'error', message: err.message });
+    }
+    if (browser && !closedByUser && mode !== 'visible') await browser.close().catch(() => {});
+    return { ok: false, error: closedByUser ? 'Browser closed by user' : err.message };
   }
 });
 

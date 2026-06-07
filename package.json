@@ -1,6 +1,6 @@
 {
   "name": "cloaked-manager",
-  "version": "2.2.3",
+  "version": "2.3.0",
   "description": "Personal Cloaked alias & 2FA manager",
   "main": "src/main.js",
   "scripts": {
@@ -16,7 +16,7 @@
     "playwright": "^1.44.0"
   },
   "devDependencies": {
-    "electron": "^30.0.0",
+    "electron": "^30.5.1",
     "electron-builder": "^24.0.0"
   },
   "build": {

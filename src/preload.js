@@ -10,6 +10,13 @@ contextBridge.exposeInMainWorld('cloakedAPI', {
   saveCredentials: (c) => ipcRenderer.invoke('save-credentials', c),
   loadCredentials: ()  => ipcRenderer.invoke('load-credentials'),
 
+  // Session
+  clearSession: () => ipcRenderer.invoke('clear-session'),
+
+  // Aliases
+  saveAliases: (a) => ipcRenderer.invoke('save-aliases', a),
+  loadAliases: ()  => ipcRenderer.invoke('load-aliases'),
+
   // Mappings
   saveMappings: (m) => ipcRenderer.invoke('save-mappings', m),
   loadMappings: ()  => ipcRenderer.invoke('load-mappings'),
