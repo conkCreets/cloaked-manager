@@ -1,6 +1,6 @@
 {
   "name": "cloaked-manager",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "Personal Cloaked alias & 2FA manager",
   "main": "src/main.js",
   "scripts": {
