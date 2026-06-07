@@ -1,5 +1,23 @@
 # Changelog
 
+## v2.3.1
+- Updates now install silently without showing the setup wizard
+- App restarts automatically after an update completes
+- First-time install still shows full wizard with directory picker
+
+## v2.3.0
+- Alias scraping: names, emails, and phone numbers scraped from Cloaked
+- Login automation fixed for cross-origin iframe at secure.cloaked.com
+- Advanced Mode activation (toggle + confirm modal) runs every sync
+- Session persistence via Playwright storageState — login skipped on resume
+- Aliases persisted via electron-store — survive app restarts, no re-sync needed
+- Sync result shows new/updated alias counts ("2 new aliases", "1 updated")
+- Browser stays open after sync in Visible mode for DOM inspection
+- Sync aborts cleanly if browser window is manually closed
+- Session card in Settings with Clear Saved Session button
+- Fix: alias names now fall back to scraped name instead of showing Unlabeled
+- Fix: app no longer crashes when closed during an active sync
+
 ## v2.2.3
 - Fix GitHub Actions publishing draft releases instead of published releases (add releaseType: release)
 - Update GitHub Actions to Node.js 24
