@@ -6,6 +6,9 @@ contextBridge.exposeInMainWorld('cloakedAPI', {
   maximize: () => ipcRenderer.send('window-maximize'),
   close:    () => ipcRenderer.send('window-close'),
 
+  // App info
+  getVersion: () => ipcRenderer.invoke('get-version'),
+
   // Credentials
   saveCredentials: (c) => ipcRenderer.invoke('save-credentials', c),
   loadCredentials: ()  => ipcRenderer.invoke('load-credentials'),

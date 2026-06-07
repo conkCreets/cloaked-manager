@@ -115,6 +115,7 @@ ipcMain.handle('check-for-updates', () => {
 });
 ipcMain.handle('download-update', () => { autoUpdater.downloadUpdate(); return { ok: true }; });
 ipcMain.on('restart-and-install', () => autoUpdater.quitAndInstall(true, true));
+ipcMain.handle('get-version', () => app.getVersion());
 
 // ── Credentials ───────────────────────────────────────────────────────────────
 ipcMain.handle('save-credentials', (_e, creds) => { store.set('credentials', creds); return { ok: true }; });

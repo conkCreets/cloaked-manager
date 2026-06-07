@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.3.2
+- Fix About section version number — now reads dynamically from app instead of being hardcoded
+
 ## v2.3.1
 - Updates now install silently without showing the setup wizard
 - App restarts automatically after an update completes
