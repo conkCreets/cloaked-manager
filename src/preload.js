@@ -52,10 +52,6 @@ contextBridge.exposeInMainWorld('cloakedAPI', {
     return () => ipcRenderer.removeListener('debug-log', h);
   },
 
-  // GitHub token (private-repo auto-updates)
-  saveGhToken: (token) => ipcRenderer.invoke('save-gh-token', token),
-  loadGhToken: ()      => ipcRenderer.invoke('load-gh-token'),
-
   // Auto-updater
   checkForUpdates:   () => ipcRenderer.invoke('check-for-updates'),
   downloadUpdate:    () => ipcRenderer.invoke('download-update'),

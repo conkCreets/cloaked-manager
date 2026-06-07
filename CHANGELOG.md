@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.2.2
+- Repo is now public — remove all token logic, auto-updates work with no authentication required
+
 ## v2.2.1
 - Remove GitHub token input from Settings — update token is now baked in, no user setup required
 - Check for Updates button works out of the box
