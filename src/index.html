@@ -159,6 +159,15 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);height:100vh
 @keyframes spin{to{transform:rotate(360deg)}}
 .spinner{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;}
 
+/* Update modal */
+#update-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9000;align-items:center;justify-content:center;}
+#update-modal.open{display:flex;}
+#update-modal-box{background:var(--surface);border:1px solid var(--border2);border-radius:12px;padding:28px 32px;width:460px;max-width:90vw;}
+
+/* Playwright overlay */
+#pw-overlay{display:none;position:fixed;inset:0;background:var(--bg);z-index:99999;flex-direction:column;align-items:center;justify-content:center;gap:16px;}
+#pw-overlay.active{display:flex;}
+
 /* Toggle */
 .toggle-wrap{display:inline-flex;align-items:center;cursor:pointer;}
 .toggle-wrap input{display:none;}
@@ -479,10 +488,21 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);height:100vh
       </div>
 
       <div class="card">
+        <div class="card-title">Software Updates</div>
+        <p style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">Provide a GitHub token with <span style="color:var(--accent2);font-family:var(--mono)">repo</span> scope to enable auto-updates from private releases. <span style="color:var(--accent2);cursor:pointer;text-decoration:underline" onclick="window.cloakedAPI.openExternal('https://github.com/settings/tokens')">Generate token ↗</span></p>
+        <div class="field"><label>GitHub Token</label><input type="password" id="gh-token-input" placeholder="ghp_xxxxxxxxxxxx" /></div>
+        <div class="row" style="margin-top:6px;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-ghost" onclick="saveGhToken()">Save Token</button>
+          <button class="btn btn-primary" id="update-check-btn" onclick="checkForUpdates()">↻ Check for Updates</button>
+          <span id="update-status-text" style="font-size:12px;font-family:var(--mono);color:var(--muted)"></span>
+        </div>
+      </div>
+
+      <div class="card">
         <div class="card-title">About</div>
         <p style="font-size:13px;color:var(--muted);line-height:1.6">Personal Cloaked alias manager — scraper and creator run as separate browser processes.</p>
         <hr class="divider" />
-        <div class="row" style="gap:8px"><span class="tag tag-green">v2.1.3</span><span style="font-size:12px;color:var(--muted);font-family:var(--mono)">Personal use only</span></div>
+        <div class="row" style="gap:8px"><span class="tag tag-green">v2.2.0</span><span style="font-size:12px;color:var(--muted);font-family:var(--mono)">Personal use only</span></div>
       </div>
     </div>
 
@@ -546,6 +566,38 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);height:100vh
       <span class="dc-count" id="dc-count-sms">0 entries</span>
       <button class="btn btn-ghost btn-sm" onclick="copyDcPanel('sms')">Copy</button>
       <button class="btn btn-ghost btn-sm" onclick="clearDcPanel('sms')">Clear</button>
+    </div>
+  </div>
+</div>
+
+<!-- Playwright first-launch overlay -->
+<div id="pw-overlay">
+  <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--accent2)">Setting up browser…</div>
+  <div id="pw-overlay-msg" style="font-size:12px;font-family:var(--mono);color:var(--muted);text-align:center;max-width:400px;line-height:1.7">This only happens once on first launch.</div>
+  <span class="spinner" style="width:20px;height:20px;border-width:3px;margin-top:4px"></span>
+</div>
+
+<!-- Update available modal -->
+<div id="update-modal">
+  <div id="update-modal-box">
+    <div style="display:flex;align-items:center;margin-bottom:18px">
+      <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green)">Update Available</div>
+      <div style="margin-left:auto"><button class="btn btn-ghost btn-sm" onclick="closeUpdateModal()">✕</button></div>
+    </div>
+    <div style="font-size:15px;font-weight:600;margin-bottom:14px" id="update-version-text"></div>
+    <div id="update-notes" style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:18px;background:var(--surface2);border:1px solid var(--border2);border-radius:7px;padding:12px;max-height:160px;overflow-y:auto;line-height:1.7;white-space:pre-wrap;display:none"></div>
+    <div id="update-progress-wrap" style="display:none;margin-bottom:16px">
+      <div style="font-size:11px;font-family:var(--mono);color:var(--muted);margin-bottom:5px;display:flex;justify-content:space-between">
+        <span>Downloading…</span><span id="update-progress-text">0%</span>
+      </div>
+      <div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden">
+        <div id="update-progress-bar" style="height:100%;background:var(--accent);border-radius:2px;transition:width .4s linear;width:0%"></div>
+      </div>
+    </div>
+    <div class="row" style="gap:10px">
+      <button class="btn btn-primary" id="update-download-btn" onclick="downloadUpdate()">↓ Download Update</button>
+      <button class="btn btn-green"   id="update-restart-btn" style="display:none" onclick="restartAndInstall()">↻ Restart Now</button>
+      <button class="btn btn-ghost"   onclick="closeUpdateModal()">Later</button>
     </div>
   </div>
 </div>
@@ -1223,6 +1275,99 @@ function clearDcAll() {
   toast('All debug logs cleared');
 }
 
+// ── GitHub token ───────────────────────────────────────────────────────────────
+async function saveGhToken() {
+  const token = document.getElementById('gh-token-input').value.trim();
+  await window.cloakedAPI.saveGhToken(token);
+  toast('GitHub token saved');
+}
+
+// ── Auto-updater ───────────────────────────────────────────────────────────────
+function handleUpdateStatus({ type, version, message, releaseNotes }) {
+  const btn      = document.getElementById('update-check-btn');
+  const statusEl = document.getElementById('update-status-text');
+
+  switch (type) {
+    case 'checking':
+      if (btn) btn.textContent = '◌ Checking…';
+      if (statusEl) statusEl.textContent = 'Checking…';
+      break;
+    case 'available':
+      if (btn) btn.textContent = '↓ Update Available';
+      if (statusEl) { statusEl.textContent = `v${version} available`; statusEl.style.color = 'var(--green)'; }
+      showUpdateModal(version, releaseNotes);
+      break;
+    case 'not-available':
+      if (btn) btn.textContent = '↻ Check for Updates';
+      if (statusEl) { statusEl.textContent = "You're up to date!"; statusEl.style.color = 'var(--green)'; }
+      setTimeout(() => { if (statusEl) { statusEl.textContent = ''; statusEl.style.color = ''; } }, 3000);
+      break;
+    case 'downloaded':
+      document.getElementById('update-download-btn').style.display = 'none';
+      document.getElementById('update-restart-btn').style.display  = '';
+      document.getElementById('update-progress-wrap').style.display = 'none';
+      document.getElementById('update-modal').classList.add('open');
+      break;
+    case 'error':
+      if (btn) btn.textContent = '↻ Check for Updates';
+      if (statusEl) { statusEl.textContent = `Error: ${message}`; statusEl.style.color = 'var(--red)'; }
+      setTimeout(() => { if (statusEl) { statusEl.textContent = ''; statusEl.style.color = ''; } }, 5000);
+      break;
+  }
+}
+
+function handleDownloadProgress({ percent, bytesPerSecond }) {
+  const pct = Math.round(percent);
+  document.getElementById('update-progress-bar').style.width = `${pct}%`;
+  document.getElementById('update-progress-text').textContent = `${pct}% — ${(bytesPerSecond / 1024).toFixed(0)} KB/s`;
+}
+
+function showUpdateModal(version, notes) {
+  document.getElementById('update-version-text').textContent = `v${version} is available`;
+  document.getElementById('update-download-btn').style.display = '';
+  document.getElementById('update-restart-btn').style.display  = 'none';
+  document.getElementById('update-progress-wrap').style.display = 'none';
+  const notesEl = document.getElementById('update-notes');
+  if (notes && typeof notes === 'string' && notes.trim()) {
+    notesEl.textContent = notes.trim();
+    notesEl.style.display = '';
+  } else {
+    notesEl.style.display = 'none';
+  }
+  document.getElementById('update-modal').classList.add('open');
+}
+
+function closeUpdateModal() { document.getElementById('update-modal').classList.remove('open'); }
+
+async function checkForUpdates() {
+  const btn = document.getElementById('update-check-btn');
+  const statusEl = document.getElementById('update-status-text');
+  if (btn) btn.textContent = '◌ Checking…';
+  if (statusEl) { statusEl.textContent = ''; statusEl.style.color = ''; }
+  await window.cloakedAPI.checkForUpdates();
+}
+
+async function downloadUpdate() {
+  document.getElementById('update-download-btn').disabled = true;
+  document.getElementById('update-progress-wrap').style.display = '';
+  await window.cloakedAPI.downloadUpdate();
+}
+
+function restartAndInstall() { window.cloakedAPI.restartAndInstall(); }
+
+// ── Playwright first-launch overlay ────────────────────────────────────────────
+function handlePlaywrightStatus({ stage, message }) {
+  const overlay = document.getElementById('pw-overlay');
+  const msgEl   = document.getElementById('pw-overlay-msg');
+  if (stage === 'installing') {
+    overlay.classList.add('active');
+    if (message && msgEl) msgEl.textContent = message;
+  } else if (stage === 'ready' || stage === 'error') {
+    overlay.classList.remove('active');
+    if (stage === 'error' && message) toast(message, 'var(--red)');
+  }
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────────
 async function init() {
   await loadCredentials();
@@ -1231,10 +1376,14 @@ async function init() {
   state.mappings = await window.cloakedAPI.loadMappings();
   renderAll();
 
-  // Subscribe to debug log events from main process
-  window.cloakedAPI.onDebugLog(({ panel, level, message, ts }) => {
-    appendDcEntry(panel, level, message, ts);
-  });
+  const ghToken = await window.cloakedAPI.loadGhToken();
+  if (ghToken) document.getElementById('gh-token-input').value = ghToken;
+
+  // Subscribe to IPC events from main process
+  window.cloakedAPI.onDebugLog(({ panel, level, message, ts }) => appendDcEntry(panel, level, message, ts));
+  window.cloakedAPI.onUpdateStatus(handleUpdateStatus);
+  window.cloakedAPI.onDownloadProgress(handleDownloadProgress);
+  window.cloakedAPI.onPlaywrightStatus(handlePlaywrightStatus);
 }
 init();
 </script>

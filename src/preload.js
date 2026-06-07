@@ -52,6 +52,32 @@ contextBridge.exposeInMainWorld('cloakedAPI', {
     return () => ipcRenderer.removeListener('debug-log', h);
   },
 
+  // GitHub token (private-repo auto-updates)
+  saveGhToken: (token) => ipcRenderer.invoke('save-gh-token', token),
+  loadGhToken: ()      => ipcRenderer.invoke('load-gh-token'),
+
+  // Auto-updater
+  checkForUpdates:   () => ipcRenderer.invoke('check-for-updates'),
+  downloadUpdate:    () => ipcRenderer.invoke('download-update'),
+  restartAndInstall: () => ipcRenderer.send('restart-and-install'),
+  onUpdateStatus: (cb) => {
+    const h = (_e, d) => cb(d);
+    ipcRenderer.on('update-status', h);
+    return () => ipcRenderer.removeListener('update-status', h);
+  },
+  onDownloadProgress: (cb) => {
+    const h = (_e, d) => cb(d);
+    ipcRenderer.on('download-progress', h);
+    return () => ipcRenderer.removeListener('download-progress', h);
+  },
+
+  // Playwright first-launch status
+  onPlaywrightStatus: (cb) => {
+    const h = (_e, d) => cb(d);
+    ipcRenderer.on('playwright-status', h);
+    return () => ipcRenderer.removeListener('playwright-status', h);
+  },
+
   // External
   openExternal: (url) => ipcRenderer.send('open-external', url)
 });

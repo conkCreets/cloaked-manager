@@ -1,6 +1,8 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs   = require('fs');
+const { spawn } = require('child_process');
 const Store = require('electron-store');
 
 const store = new Store({ encryptionKey: 'cloaked-manager-local-key' });
@@ -19,13 +21,112 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
 }
 
-app.whenReady().then(createWindow);
+// ── Playwright Chromium first-launch check ────────────────────────────────────
+async function ensurePlaywrightChromium() {
+  const { chromium } = require('playwright');
+  let installed = false;
+  try {
+    const execPath = chromium.executablePath();
+    installed = fs.existsSync(execPath);
+  } catch (_) {
+    installed = false;
+  }
+
+  if (installed) {
+    mainWindow.webContents.send('playwright-status', { stage: 'ready' });
+    return;
+  }
+
+  mainWindow.webContents.send('playwright-status', { stage: 'installing', message: 'Setting up browser — this only happens once…' });
+
+  await new Promise((resolve) => {
+    // Works in both dev and packaged (playwright is in asarUnpack)
+    let playwrightCli;
+    try { playwrightCli = require.resolve('playwright/cli'); } catch (_) { playwrightCli = require.resolve('playwright-core/cli'); }
+
+    const proc = spawn(process.execPath, [playwrightCli, 'install', 'chromium'], { stdio: 'pipe' });
+
+    proc.stdout.on('data', d => {
+      const msg = d.toString().trim();
+      if (msg) mainWindow.webContents.send('playwright-status', { stage: 'installing', message: msg });
+    });
+
+    proc.on('close', code => {
+      mainWindow.webContents.send('playwright-status', {
+        stage: code === 0 ? 'ready' : 'error',
+        message: code === 0 ? 'Browser ready!' : 'Browser setup failed — run: npm run install-playwright'
+      });
+      resolve();
+    });
+  });
+}
+
+// ── Auto-updater setup ────────────────────────────────────────────────────────
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+
+function configureUpdater() {
+  const ghToken = store.get('ghToken', '');
+  if (ghToken) autoUpdater.requestHeaders = { Authorization: `token ${ghToken}` };
+}
+
+autoUpdater.on('checking-for-update', () => {
+  if (mainWindow) mainWindow.webContents.send('update-status', { type: 'checking' });
+});
+autoUpdater.on('update-available', info => {
+  if (mainWindow) mainWindow.webContents.send('update-status', { type: 'available', version: info.version, releaseNotes: info.releaseNotes });
+});
+autoUpdater.on('update-not-available', () => {
+  if (mainWindow) mainWindow.webContents.send('update-status', { type: 'not-available' });
+});
+autoUpdater.on('download-progress', progress => {
+  if (mainWindow) mainWindow.webContents.send('download-progress', progress);
+});
+autoUpdater.on('update-downloaded', info => {
+  if (mainWindow) mainWindow.webContents.send('update-status', { type: 'downloaded', version: info.version });
+});
+autoUpdater.on('error', err => {
+  if (mainWindow) mainWindow.webContents.send('update-status', { type: 'error', message: err.message });
+});
+
+app.whenReady().then(async () => {
+  createWindow();
+
+  // Wait for renderer to load before sending IPC events
+  mainWindow.webContents.once('did-finish-load', async () => {
+    await ensurePlaywrightChromium();
+
+    // Silent auto-check on startup — only in packaged app
+    if (app.isPackaged) {
+      setTimeout(() => {
+        configureUpdater();
+        autoUpdater.checkForUpdates().catch(() => {});
+      }, 4000);
+    }
+  });
+});
+
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 
 // ── Window controls ───────────────────────────────────────────────────────────
 ipcMain.on('window-minimize', () => mainWindow.minimize());
 ipcMain.on('window-maximize', () => mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize());
 ipcMain.on('window-close',    () => mainWindow.close());
+
+// ── GitHub token (for private-repo auto-updates) ──────────────────────────────
+ipcMain.handle('save-gh-token', (_e, token) => { store.set('ghToken', token); return { ok: true }; });
+ipcMain.handle('load-gh-token', ()           => store.get('ghToken', ''));
+
+// ── Auto-updater IPC ──────────────────────────────────────────────────────────
+ipcMain.handle('check-for-updates', () => {
+  configureUpdater();
+  autoUpdater.checkForUpdates().catch(err => {
+    if (mainWindow) mainWindow.webContents.send('update-status', { type: 'error', message: err.message });
+  });
+  return { ok: true };
+});
+ipcMain.handle('download-update', () => { autoUpdater.downloadUpdate(); return { ok: true }; });
+ipcMain.on('restart-and-install', () => autoUpdater.quitAndInstall());
 
 // ── Credentials ───────────────────────────────────────────────────────────────
 ipcMain.handle('save-credentials', (_e, creds) => { store.set('credentials', creds); return { ok: true }; });

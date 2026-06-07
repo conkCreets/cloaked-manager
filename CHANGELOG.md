@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.2.0
+- EXE packaging via electron-builder (NSIS installer, `npm run build`)
+- Auto-update via GitHub releases using electron-updater (`npm run publish`)
+- GitHub token field in Settings for private-repo update authentication
+- Update modal with version number, release notes, download progress bar, and Restart Now button
+- Silent auto-check for updates on launch (packaged builds only)
+- First-launch Playwright Chromium install: shows overlay if browser not yet set up
+
 ## v2.1.3
 - Fixed login URL to `https://my.cloaked.com/auth/login` (correct Cloaked login page)
 - Updated creator and Open Cloaked button URLs to match
