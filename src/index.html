@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Cloaked Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#08080e;--surface:#0f0f1a;--surface2:#141425;--border:#1e1e36;--border2:#2a2a4a;
+  --accent:#5b5bf8;--accent2:#8080ff;--green:#22d9a0;--yellow:#f0c040;--red:#f05060;
+  --text:#e8e8f5;--muted:#6a6a90;--mono:'Space Mono',monospace;--sans:'DM Sans',sans-serif;
+  --radius:10px;--titlebar:36px;
+}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);height:100vh;overflow:hidden;display:flex;flex-direction:column;user-select:none;}
+
+/* Titlebar */
+#titlebar{height:var(--titlebar);background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 12px;-webkit-app-region:drag;flex-shrink:0;gap:10px;}
+#titlebar .logo{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent2);letter-spacing:.08em;-webkit-app-region:no-drag;}
+#titlebar .logo span{color:var(--muted);}
+#titlebar .spacer{flex:1;}
+.wc-btn{-webkit-app-region:no-drag;width:13px;height:13px;border-radius:50%;border:none;cursor:pointer;transition:opacity .15s;}
+.wc-btn:hover{opacity:.75;}
+#btn-close{background:#ff5f57;}#btn-minimize{background:#ffbd2e;}#btn-maximize{background:#28c840;}
+
+/* Layout */
+#app{display:flex;flex:1;overflow:hidden;}
+#sidebar{width:200px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:16px 0;flex-shrink:0;}
+#main{flex:1;overflow-y:auto;padding:28px 32px;background:var(--bg);}
+#main::-webkit-scrollbar{width:5px;}
+#main::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
+
+/* Sidebar nav */
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 18px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;transition:all .15s;border-left:2px solid transparent;}
+.nav-item:hover{color:var(--text);background:rgba(91,91,248,.06);}
+.nav-item.active{color:var(--accent2);background:rgba(91,91,248,.1);border-left-color:var(--accent);}
+.nav-icon{font-size:15px;width:18px;text-align:center;}
+.nav-badge{margin-left:auto;background:var(--accent);color:#fff;font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:10px;font-weight:700;}
+.sidebar-section{font-size:10px;font-family:var(--mono);letter-spacing:.12em;color:var(--muted);padding:14px 18px 6px;text-transform:uppercase;}
+#sidebar-footer{margin-top:auto;padding:12px 16px;border-top:1px solid var(--border);}
+#sync-btn{width:100%;padding:9px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.06em;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:7px;}
+#sync-btn:hover{background:var(--accent2);transform:translateY(-1px);}
+#sync-btn:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+#sync-status-text{font-size:10px;color:var(--muted);text-align:center;margin-top:7px;font-family:var(--mono);min-height:14px;}
+
+/* Pages */
+.page{display:none;}.page.active{display:block;}
+.page-header{margin-bottom:28px;}
+.page-header h1{font-family:var(--mono);font-size:20px;font-weight:700;letter-spacing:-.01em;}
+.page-header p{font-size:13px;color:var(--muted);margin-top:4px;}
+
+/* Cards */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;margin-bottom:16px;}
+.card-title{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;}
+
+/* Forms */
+.field{margin-bottom:14px;}
+.field label{display:block;font-size:12px;font-weight:500;color:var(--muted);margin-bottom:6px;font-family:var(--mono);letter-spacing:.04em;}
+.field input,.field select{width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:7px;padding:9px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;transition:border-color .15s;}
+.field input:focus,.field select:focus{border-color:var(--accent);}
+.field input::placeholder{color:var(--muted);opacity:.5;}
+.field select option{background:var(--surface2);}
+
+/* Buttons */
+.btn{padding:9px 18px;border-radius:7px;border:none;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;letter-spacing:.04em;}
+.btn-primary{background:var(--accent);color:#fff;}.btn-primary:hover{background:var(--accent2);}
+.btn-ghost{background:transparent;border:1px solid var(--border2);color:var(--muted);}.btn-ghost:hover{border-color:var(--accent);color:var(--accent2);}
+.btn-sm{padding:5px 12px;font-size:11px;}
+.btn-green{background:rgba(34,217,160,.15);color:var(--green);border:1px solid rgba(34,217,160,.3);}.btn-green:hover{background:rgba(34,217,160,.25);}
+.btn-yellow{background:rgba(240,192,64,.15);color:var(--yellow);border:1px solid rgba(240,192,64,.3);}
+.btn-red{background:rgba(240,80,96,.15);color:var(--red);border:1px solid rgba(240,80,96,.3);}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+
+/* Stats */
+.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px;}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;}
+.stat-label{font-size:10px;font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
+.stat-value{font-family:var(--mono);font-size:28px;font-weight:700;}
+.stat-value.green{color:var(--green);}.stat-value.accent{color:var(--accent2);}
+
+/* Alias grid */
+.alias-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.alias-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;transition:border-color .15s;position:relative;}
+.alias-card:hover{border-color:var(--border2);}
+.alias-label{font-size:11px;font-family:var(--mono);color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;}
+.alias-account{font-size:15px;font-weight:600;margin-bottom:8px;}
+.alias-pill{display:inline-flex;align-items:center;gap:5px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:3px 8px;font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:4px;}
+.alias-pill.email{color:var(--accent2);border-color:rgba(128,128,255,.2);background:rgba(91,91,248,.08);}
+.alias-pill.phone{color:var(--green);border-color:rgba(34,217,160,.2);background:rgba(34,217,160,.06);}
+
+/* Codes table */
+.codes-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+.codes-toolbar input{background:var(--surface2);border:1px solid var(--border2);border-radius:7px;padding:7px 12px;color:var(--text);font-size:13px;font-family:var(--mono);outline:none;width:220px;transition:border-color .15s;}
+.codes-toolbar input:focus{border-color:var(--accent);}
+.codes-table{width:100%;border-collapse:collapse;}
+.codes-table th{font-size:10px;font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:8px 12px;text-align:left;border-bottom:1px solid var(--border);}
+.codes-table td{padding:10px 12px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.codes-table tr:last-child td{border-bottom:none;}
+.codes-table tr:hover td{background:rgba(255,255,255,.02);}
+.code-cell{font-family:var(--mono);font-size:16px;font-weight:700;color:var(--green);cursor:pointer;letter-spacing:.08em;transition:color .15s;}
+.code-cell:hover{color:var(--accent2);}
+.code-cell.copied{color:var(--accent2);}
+
+/* Creator page */
+.tab-bar{display:flex;gap:0;margin-bottom:20px;border-bottom:1px solid var(--border);}
+.tab{padding:8px 18px;font-size:13px;font-family:var(--mono);font-weight:700;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;letter-spacing:.04em;}
+.tab:hover{color:var(--text);}
+.tab.active{color:var(--accent2);border-bottom-color:var(--accent);}
+.tab-panel{display:none;}.tab-panel.active{display:block;}
+
+/* Creator run panel */
+.creator-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;}
+.creator-log{background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:14px;font-family:var(--mono);font-size:11px;color:var(--muted);max-height:160px;overflow-y:auto;line-height:1.8;}
+.creator-log::-webkit-scrollbar{width:4px;}
+.creator-log::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+.log-line{margin-bottom:2px;}
+.log-line.success{color:var(--green);}
+.log-line.error{color:var(--red);}
+.log-line.waiting{color:var(--yellow);}
+.log-line.info{color:var(--accent2);}
+
+/* Task table */
+.task-table{width:100%;border-collapse:collapse;margin-top:12px;}
+.task-table th{font-size:10px;font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:7px 10px;text-align:left;border-bottom:1px solid var(--border);}
+.task-table td{padding:9px 10px;font-size:12px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.task-table tr:last-child td{border-bottom:none;}
+.task-status{font-family:var(--mono);font-size:11px;font-weight:700;}
+.task-status.pending{color:var(--muted);}
+.task-status.creating{color:var(--yellow);}
+.task-status.done{color:var(--green);}
+.task-status.failed{color:var(--red);}
+.task-status.waiting{color:var(--accent2);}
+
+/* CSV preview */
+.csv-preview-table{width:100%;border-collapse:collapse;font-size:12px;}
+.csv-preview-table th{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:6px 10px;text-align:left;border-bottom:1px solid var(--border);}
+.csv-preview-table td{padding:7px 10px;border-bottom:1px solid var(--border);font-family:var(--mono);}
+.csv-preview-table tr:last-child td{border-bottom:none;}
+
+/* Countdown bar */
+.countdown-wrap{margin-top:8px;display:none;}
+.countdown-label{font-size:10px;font-family:var(--mono);color:var(--muted);margin-bottom:4px;display:flex;justify-content:space-between;}
+.countdown-bar-track{height:3px;background:var(--surface2);border-radius:2px;overflow:hidden;}
+.countdown-bar-fill{height:100%;background:var(--yellow);border-radius:2px;transition:width 1s linear;}
+
+/* Empty state */
+.empty-state{text-align:center;padding:60px 20px;color:var(--muted);}
+.empty-state .empty-icon{font-size:36px;margin-bottom:12px;}
+.empty-state h3{font-family:var(--mono);font-size:14px;margin-bottom:6px;color:var(--text);}
+.empty-state p{font-size:13px;}
+
+/* Misc */
+.divider{border:none;border-top:1px solid var(--border);margin:20px 0;}
+.row{display:flex;gap:10px;align-items:center;}
+.tag{font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;font-weight:700;}
+.tag-green{background:rgba(34,217,160,.12);color:var(--green);}
+.tag-yellow{background:rgba(240,192,64,.12);color:var(--yellow);}
+.tag-red{background:rgba(240,80,96,.12);color:var(--red);}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;}
+
+/* Toggle */
+.toggle-wrap{display:inline-flex;align-items:center;cursor:pointer;}
+.toggle-wrap input{display:none;}
+.toggle-track{width:40px;height:22px;background:var(--surface2);border:1px solid var(--border2);border-radius:11px;position:relative;transition:background .2s,border-color .2s;}
+.toggle-thumb{position:absolute;top:3px;left:3px;width:14px;height:14px;background:var(--muted);border-radius:50%;transition:transform .2s,background .2s;}
+.toggle-wrap input:checked+.toggle-track{background:rgba(91,91,248,.25);border-color:var(--accent);}
+.toggle-wrap input:checked+.toggle-track .toggle-thumb{transform:translateX(18px);background:var(--accent2);}
+
+/* Browser mode radio */
+.browser-mode-option{display:flex;align-items:flex-start;gap:12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:12px 14px;cursor:pointer;transition:border-color .15s,background .15s;margin-bottom:8px;}
+.browser-mode-option:hover{border-color:var(--accent);}
+.browser-mode-option input[type="radio"]{width:auto;margin-top:2px;accent-color:var(--accent);flex-shrink:0;cursor:pointer;}
+.browser-mode-option:has(input:checked){border-color:var(--accent);background:rgba(91,91,248,.08);}
+.bmode-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px;display:flex;align-items:center;}
+.bmode-desc{font-size:12px;color:var(--muted);line-height:1.5;}
+
+/* Screenshot card */
+.screenshot-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;}
+.screenshot-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;transition:border-color .15s;}
+.screenshot-card:hover{border-color:var(--border2);}
+.screenshot-thumb{width:100%;aspect-ratio:16/10;object-fit:cover;object-position:top;display:block;background:var(--surface2);cursor:zoom-in;}
+.screenshot-info{padding:10px 12px;}
+.screenshot-name{font-family:var(--mono);font-size:11px;color:var(--accent2);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.screenshot-meta{font-size:11px;color:var(--muted);font-family:var(--mono);display:flex;justify-content:space-between;align-items:center;}
+.screenshot-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;transition:color .15s;}
+.screenshot-del:hover{color:var(--red);}
+
+/* Lightbox */
+#lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:10000;align-items:center;justify-content:center;flex-direction:column;gap:12px;}
+#lightbox.open{display:flex;}
+#lightbox img{max-width:90vw;max-height:82vh;border-radius:8px;border:1px solid var(--border2);object-fit:contain;}
+#lightbox-label{font-family:var(--mono);font-size:12px;color:var(--muted);}
+#lightbox-close{position:absolute;top:16px;right:20px;background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;transition:color .15s;}
+#lightbox-close:hover{color:var(--text);}
+
+/* Toast */
+#toast{position:fixed;bottom:24px;right:24px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:10px 16px;font-size:13px;font-family:var(--mono);color:var(--green);opacity:0;transform:translateY(8px);transition:all .25s;pointer-events:none;z-index:9999;}
+#toast.show{opacity:1;transform:translateY(0);}
+
+/* Debug console drawer */
+#debug-console{position:fixed;top:var(--titlebar);right:0;bottom:0;width:480px;background:var(--surface);border-left:1px solid var(--border2);display:flex;flex-direction:column;z-index:1000;transform:translateX(100%);transition:transform .25s ease;}
+#debug-console.open{transform:translateX(0);}
+#debug-console-header{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);gap:10px;flex-shrink:0;}
+.dc-title{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--text);letter-spacing:.06em;}
+.dc-tab-bar{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;}
+.dc-tab{padding:8px 16px;font-size:11px;font-family:var(--mono);font-weight:700;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;letter-spacing:.04em;display:flex;align-items:center;gap:6px;}
+.dc-tab:hover{color:var(--text);}
+.dc-tab.active{color:var(--accent2);border-bottom-color:var(--accent);}
+.dc-tab-badge{background:var(--red);color:#fff;font-size:9px;padding:0 4px;border-radius:8px;font-weight:700;min-width:14px;text-align:center;display:none;}
+.dc-tab-badge.has-errors{display:inline-block;}
+.dc-panel{display:none;flex:1;flex-direction:column;overflow:hidden;}
+.dc-panel.active{display:flex;}
+.dc-log{flex:1;overflow-y:auto;padding:10px 12px;font-family:var(--mono);font-size:10.5px;line-height:1.8;}
+.dc-log::-webkit-scrollbar{width:4px;}
+.dc-log::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+.dc-entry{display:flex;gap:8px;margin-bottom:1px;word-break:break-all;}
+.dc-ts{color:var(--muted);opacity:.5;flex-shrink:0;font-size:10px;}
+.dc-lvl{flex-shrink:0;font-weight:700;font-size:10px;width:52px;}
+.dc-msg{flex:1;}
+.dc-entry.info .dc-lvl{color:var(--accent2);}
+.dc-entry.info .dc-msg{color:var(--muted);}
+.dc-entry.success .dc-lvl{color:var(--green);}
+.dc-entry.success .dc-msg{color:var(--text);}
+.dc-entry.warning .dc-lvl{color:var(--yellow);}
+.dc-entry.warning .dc-msg{color:var(--yellow);}
+.dc-entry.error .dc-lvl{color:var(--red);}
+.dc-entry.error .dc-msg{color:var(--red);font-weight:600;}
+.dc-entry.verbose .dc-lvl{color:var(--muted);opacity:.5;}
+.dc-entry.verbose .dc-msg{color:var(--muted);opacity:.7;font-size:10px;}
+.dc-toolbar{display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--border);flex-shrink:0;align-items:center;}
+.dc-count{font-size:10px;font-family:var(--mono);color:var(--muted);margin-right:auto;}
+#debug-console-toggle{width:100%;margin-top:8px;padding:7px;background:transparent;border:1px solid var(--border2);border-radius:var(--radius);font-family:var(--mono);font-size:10px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .15s;letter-spacing:.04em;display:flex;align-items:center;justify-content:center;gap:6px;}
+#debug-console-toggle:hover{border-color:var(--accent);color:var(--accent2);}
+#debug-console-toggle.active{border-color:var(--accent);color:var(--accent2);background:rgba(91,91,248,.08);}
+#debug-error-badge{background:var(--red);color:#fff;font-size:9px;padding:0 5px;border-radius:8px;font-weight:700;display:none;}
+#debug-error-badge.visible{display:inline-block;}
+</style>
+</head>
+<body>
+
+<div id="titlebar">
+  <button class="wc-btn" id="btn-close"    onclick="window.cloakedAPI.close()"></button>
+  <button class="wc-btn" id="btn-minimize" onclick="window.cloakedAPI.minimize()"></button>
+  <button class="wc-btn" id="btn-maximize" onclick="window.cloakedAPI.maximize()"></button>
+  <div class="logo">CLOAKED<span>/</span>MGR</div>
+</div>
+
+<div id="app">
+  <nav id="sidebar">
+    <div class="sidebar-section">Main</div>
+    <div class="nav-item active" data-page="dashboard">⬡ Dashboard</div>
+    <div class="nav-item" data-page="aliases">◈ Aliases <span class="nav-badge" id="alias-count">0</span></div>
+    <div class="nav-item" data-page="codes">◉ Codes <span class="nav-badge" id="codes-count">0</span></div>
+    <div class="nav-item" data-page="mappings">⊞ Mappings</div>
+
+    <div class="sidebar-section" style="margin-top:8px">Tools</div>
+    <div class="nav-item" data-page="creator">⊕ Create Aliases</div>
+    <div class="nav-item" data-page="settings">◎ Settings</div>
+    <div class="nav-item" data-page="debug">⬡ Debug <span class="nav-badge" id="debug-count" style="background:var(--yellow);color:#000;display:none">0</span></div>
+
+    <div id="sidebar-footer">
+      <button id="sync-btn" onclick="startSync()"><span id="sync-icon">↻</span> Sync</button>
+      <div id="sync-status-text">Not synced yet</div>
+      <button id="debug-console-toggle" onclick="toggleDebugConsole()">
+        ◈ Debug Console <span id="debug-error-badge">0</span>
+      </button>
+    </div>
+  </nav>
+
+  <main id="main">
+
+    <!-- Dashboard -->
+    <div class="page active" id="page-dashboard">
+      <div class="page-header"><h1>Dashboard</h1><p>Overview of your Cloaked aliases and recent 2FA codes</p></div>
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-label">Aliases</div><div class="stat-value accent" id="stat-aliases">—</div></div>
+        <div class="stat-card"><div class="stat-label">Codes</div><div class="stat-value green" id="stat-codes">—</div></div>
+        <div class="stat-card"><div class="stat-label">Last Sync</div><div class="stat-value" id="stat-sync" style="font-size:14px;padding-top:8px">Never</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Recent Codes</div>
+        <div id="dashboard-codes">
+          <div class="empty-state"><div class="empty-icon">◎</div><h3>No codes yet</h3><p>Click Sync to fetch your latest 2FA codes</p></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Quick Actions</div>
+        <div class="row" style="flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="startSync()">↻ Sync Now</button>
+          <button class="btn btn-ghost" onclick="navTo('aliases')">View Aliases →</button>
+          <button class="btn btn-ghost" onclick="navTo('creator')">Create Aliases →</button>
+          <button class="btn btn-ghost" onclick="window.cloakedAPI.openExternal('https://my.cloaked.com')">Open Cloaked ↗</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;margin-bottom:12px">
+          <div class="card-title" style="margin-bottom:0">Sync Log</div>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="copySyncLog()">Copy Log</button>
+            <button class="btn btn-ghost btn-sm" onclick="clearSyncLog()">Clear</button>
+          </div>
+        </div>
+        <div id="sync-log" style="background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:12px;font-family:var(--mono);font-size:11px;line-height:1.9;max-height:220px;overflow-y:auto;color:var(--muted)">
+          <span style="opacity:0.5">No sync activity yet…</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Aliases -->
+    <div class="page" id="page-aliases">
+      <div class="page-header"><h1>Aliases</h1><p>All phone numbers and email aliases fetched from your Cloaked account</p></div>
+      <div id="aliases-grid" class="alias-grid">
+        <div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">◈</div><h3>No aliases synced</h3><p>Run a sync to pull your aliases from Cloaked</p></div>
+      </div>
+    </div>
+
+    <!-- Codes -->
+    <div class="page" id="page-codes">
+      <div class="page-header"><h1>2FA Codes</h1><p>All verification codes detected across your aliases</p></div>
+      <div class="card">
+        <div class="codes-toolbar">
+          <input type="text" id="codes-search" placeholder="Search account, alias, or code…" oninput="renderCodesTable()" />
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="exportCSV()">↓ Export CSV</button>
+            <button class="btn btn-ghost btn-sm" onclick="startSync()">↻ Sync</button>
+          </div>
+        </div>
+        <div id="codes-table-wrap">
+          <div class="empty-state"><div class="empty-icon">◉</div><h3>No codes yet</h3><p>Run a sync to detect 2FA codes</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mappings -->
+    <div class="page" id="page-mappings">
+      <div class="page-header"><h1>Alias Mappings</h1><p>Label each alias with the account it belongs to</p></div>
+      <div class="card">
+        <div class="card-title">Account Labels</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;padding:0 2px">
+          <div style="font-size:10px;font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">Alias</div>
+          <div style="font-size:10px;font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">Account Label</div>
+        </div>
+        <div id="mappings-editor"><div class="empty-state"><div class="empty-icon">⊞</div><h3>No aliases to map</h3><p>Sync first</p></div></div>
+        <hr class="divider" />
+        <button class="btn btn-primary" onclick="saveMappings()">Save Mappings</button>
+      </div>
+    </div>
+
+    <!-- Create Aliases -->
+    <div class="page" id="page-creator">
+      <div class="page-header"><h1>Create Aliases</h1><p>Programmatically create new Cloaked aliases with human-paced bell-curve delays</p></div>
+
+      <!-- Run controls (always visible when tasks loaded) -->
+      <div class="card" id="creator-run-card" style="display:none">
+        <div class="card-title">Run Status</div>
+        <div class="creator-controls">
+          <button class="btn btn-primary" id="creator-start-btn" onclick="creatorStart()">▶ Start</button>
+          <button class="btn btn-yellow"  id="creator-pause-btn" onclick="creatorPauseResume()" disabled>⏸ Pause</button>
+          <button class="btn btn-red"     id="creator-stop-btn"  onclick="creatorStop()"        disabled>■ Stop</button>
+          <span id="creator-status-text" style="font-size:12px;font-family:var(--mono);color:var(--muted);margin-left:4px"></span>
+        </div>
+        <!-- Countdown bar -->
+        <div class="countdown-wrap" id="countdown-wrap">
+          <div class="countdown-label"><span id="countdown-label-text">Waiting before next alias…</span><span id="countdown-remaining"></span></div>
+          <div class="countdown-bar-track"><div class="countdown-bar-fill" id="countdown-bar" style="width:100%"></div></div>
+        </div>
+        <!-- Log -->
+        <div class="creator-log" id="creator-log"></div>
+      </div>
+
+      <!-- Input tabs -->
+      <div class="card">
+        <div class="tab-bar">
+          <div class="tab active" data-tab="single" onclick="switchTab('single',this)">Single</div>
+          <div class="tab" data-tab="bulk" onclick="switchTab('bulk',this)">Bulk CSV</div>
+        </div>
+
+        <!-- Single form -->
+        <div class="tab-panel active" id="tab-single">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <div class="field"><label>Account Name</label><input type="text" id="single-account" placeholder="e.g. Amazon" /></div>
+            <div class="field"><label>Alias Type</label>
+              <select id="single-type">
+                <option value="email">Email Alias</option>
+                <option value="phone">Phone Number</option>
+              </select>
+            </div>
+          </div>
+          <div class="row" style="margin-top:4px;gap:10px">
+            <button class="btn btn-primary" onclick="addSingleTask()">+ Add to Queue</button>
+            <span id="single-status" style="font-size:12px;font-family:var(--mono);color:var(--muted)"></span>
+          </div>
+        </div>
+
+        <!-- Bulk CSV -->
+        <div class="tab-panel" id="tab-bulk">
+          <p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.6">
+            Upload a CSV with columns: <span style="color:var(--accent2);font-family:var(--mono)">account_name, alias_type</span><br/>
+            <span style="font-size:11px">alias_type must be <code style="color:var(--green)">email</code> or <code style="color:var(--green)">phone</code></span>
+          </p>
+          <div class="row" style="gap:10px;margin-bottom:14px">
+            <input type="file" id="csv-file-input" accept=".csv" style="display:none" onchange="handleCSVUpload(event)" />
+            <button class="btn btn-ghost" onclick="document.getElementById('csv-file-input').click()">📂 Choose CSV File</button>
+            <span id="csv-filename" style="font-size:12px;font-family:var(--mono);color:var(--muted)">No file chosen</span>
+          </div>
+          <div id="csv-preview-wrap" style="display:none">
+            <div style="font-size:11px;font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Preview (<span id="csv-row-count">0</span> rows)</div>
+            <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:7px">
+              <table class="csv-preview-table" id="csv-preview-table"><thead><tr><th>#</th><th>Account Name</th><th>Alias Type</th><th>Status</th></tr></thead><tbody id="csv-preview-body"></tbody></table>
+            </div>
+            <div class="row" style="margin-top:12px;gap:10px">
+              <button class="btn btn-primary" onclick="addBulkTasks()">+ Add All to Queue</button>
+              <button class="btn btn-ghost" onclick="clearCSV()">Clear</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Task queue table -->
+      <div class="card" id="task-queue-card" style="display:none">
+        <div style="display:flex;align-items:center;margin-bottom:14px">
+          <div class="card-title" style="margin-bottom:0">Task Queue</div>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <span id="task-queue-summary" style="font-size:11px;font-family:var(--mono);color:var(--muted)"></span>
+            <button class="btn btn-ghost btn-sm" onclick="clearTaskQueue()">🗑 Clear</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="task-table">
+            <thead><tr><th>#</th><th>Account Name</th><th>Type</th><th>Status</th><th>Result</th></tr></thead>
+            <tbody id="task-queue-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="page" id="page-settings">
+      <div class="page-header"><h1>Settings</h1><p>Configure your Cloaked account and browser behavior</p></div>
+
+      <div class="card">
+        <div class="card-title">Cloaked Account</div>
+        <div class="field"><label>Email or Phone Number</label><input type="text" id="cred-email" placeholder="you@example.com or 5550001234" /></div>
+        <div class="field"><label>Password</label><input type="password" id="cred-password" placeholder="••••••••••••" /></div>
+        <div class="row" style="margin-top:6px;gap:10px">
+          <button class="btn btn-primary" onclick="saveCredentials()">Save Credentials</button>
+          <span id="cred-save-status" style="font-size:12px;color:var(--muted);font-family:var(--mono)"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Browser Mode</div>
+        <p style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:16px">Controls how both the scraper and creator browsers run. Non-headless modes have a better fingerprint.</p>
+        <label class="browser-mode-option">
+          <input type="radio" name="browser-mode" value="headless" onchange="saveBrowserMode('headless')" />
+          <div><div class="bmode-title">Headless <span class="tag tag-yellow" style="margin-left:6px">Default</span></div><div class="bmode-desc">No browser window. Fastest, most detectable.</div></div>
+        </label>
+        <label class="browser-mode-option">
+          <input type="radio" name="browser-mode" value="hidden" onchange="saveBrowserMode('hidden')" />
+          <div><div class="bmode-title">Hidden <span class="tag tag-green" style="margin-left:6px">Recommended</span></div><div class="bmode-desc">Real browser off-screen. Better fingerprint, invisible.</div></div>
+        </label>
+        <label class="browser-mode-option">
+          <input type="radio" name="browser-mode" value="visible" onchange="saveBrowserMode('visible')" />
+          <div><div class="bmode-title">Visible</div><div class="bmode-desc">Browser on screen. Best fingerprint, good for debugging.</div></div>
+        </label>
+        <div id="bmode-status" style="font-size:12px;font-family:var(--mono);color:var(--muted);margin-top:8px"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Debug Mode</div>
+        <p style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">Captures full-page screenshots at each sync step to help debug CSS selectors.</p>
+        <div class="row" style="gap:12px">
+          <label class="toggle-wrap"><input type="checkbox" id="debug-toggle" onchange="saveDebugSettings()" /><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+          <span id="debug-label" style="font-size:13px;font-family:var(--mono);color:var(--muted)">Disabled</span>
+          <button class="btn btn-ghost btn-sm" onclick="window.cloakedAPI.openDebugFolder()" style="margin-left:auto">Open Folder ↗</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">About</div>
+        <p style="font-size:13px;color:var(--muted);line-height:1.6">Personal Cloaked alias manager — scraper and creator run as separate browser processes.</p>
+        <hr class="divider" />
+        <div class="row" style="gap:8px"><span class="tag tag-green">v2.1.3</span><span style="font-size:12px;color:var(--muted);font-family:var(--mono)">Personal use only</span></div>
+      </div>
+    </div>
+
+    <!-- Debug -->
+    <div class="page" id="page-debug">
+      <div class="page-header"><h1>Debug Screenshots</h1><p>Captures from the last sync — use to inspect Cloaked's UI and fix selectors</p></div>
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="font-size:12px;font-family:var(--mono);color:var(--muted)">Debug: <span id="debug-mode-val" style="color:var(--red)">OFF</span></div>
+          <button class="btn btn-ghost btn-sm" onclick="navTo('settings')">Enable in Settings →</button>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="refreshDebugList()">↻ Refresh</button>
+            <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="clearAllScreenshots()">🗑 Clear All</button>
+            <button class="btn btn-ghost btn-sm" onclick="window.cloakedAPI.openDebugFolder()">Open Folder ↗</button>
+          </div>
+        </div>
+      </div>
+      <div id="debug-screenshots-grid" class="screenshot-grid">
+        <div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">📸</div><h3>No screenshots</h3><p>Enable debug mode, then run a sync</p></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+
+<!-- Debug Console Drawer -->
+<div id="debug-console">
+  <div id="debug-console-header">
+    <div class="dc-title">◈ Debug Console</div>
+    <div style="margin-left:auto;display:flex;gap:6px">
+      <button class="btn btn-ghost btn-sm" onclick="copyDcLog()">Copy</button>
+      <button class="btn btn-ghost btn-sm" onclick="clearDcAll()">Clear All</button>
+      <button class="btn btn-ghost btn-sm" onclick="toggleDebugConsole()">✕</button>
+    </div>
+  </div>
+  <div class="dc-tab-bar">
+    <div class="dc-tab active" data-dc="sync"    onclick="switchDcTab('sync',this)">Sync <span class="dc-tab-badge" id="dc-badge-sync"></span></div>
+    <div class="dc-tab"        data-dc="creator" onclick="switchDcTab('creator',this)">Creator <span class="dc-tab-badge" id="dc-badge-creator"></span></div>
+    <div class="dc-tab"        data-dc="sms"     onclick="switchDcTab('sms',this)">SMS / Codes <span class="dc-tab-badge" id="dc-badge-sms"></span></div>
+  </div>
+  <div class="dc-panel active" id="dc-panel-sync">
+    <div class="dc-log" id="dc-log-sync"><span style="color:var(--muted);opacity:.4">No sync activity yet…</span></div>
+    <div class="dc-toolbar">
+      <span class="dc-count" id="dc-count-sync">0 entries</span>
+      <button class="btn btn-ghost btn-sm" onclick="copyDcPanel('sync')">Copy</button>
+      <button class="btn btn-ghost btn-sm" onclick="clearDcPanel('sync')">Clear</button>
+    </div>
+  </div>
+  <div class="dc-panel" id="dc-panel-creator">
+    <div class="dc-log" id="dc-log-creator"><span style="color:var(--muted);opacity:.4">No creator activity yet…</span></div>
+    <div class="dc-toolbar">
+      <span class="dc-count" id="dc-count-creator">0 entries</span>
+      <button class="btn btn-ghost btn-sm" onclick="copyDcPanel('creator')">Copy</button>
+      <button class="btn btn-ghost btn-sm" onclick="clearDcPanel('creator')">Clear</button>
+    </div>
+  </div>
+  <div class="dc-panel" id="dc-panel-sms">
+    <div class="dc-log" id="dc-log-sms"><span style="color:var(--muted);opacity:.4">No SMS scan activity yet…</span></div>
+    <div class="dc-toolbar">
+      <span class="dc-count" id="dc-count-sms">0 entries</span>
+      <button class="btn btn-ghost btn-sm" onclick="copyDcPanel('sms')">Copy</button>
+      <button class="btn btn-ghost btn-sm" onclick="clearDcPanel('sms')">Clear</button>
+    </div>
+  </div>
+</div>
+
+<div id="lightbox" onclick="closeLightbox()">
+  <button id="lightbox-close" onclick="closeLightbox()">✕</button>
+  <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()" />
+  <div id="lightbox-label"></div>
+</div>
+<div id="toast"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+const state = {
+  aliases:   [],
+  codes:     [],
+  mappings:  {},
+  tasks:     [],   // creator task queue
+  csvRows:   [],   // parsed CSV rows pending confirmation
+  syncing:   false,
+  creatorRunning: false,
+  creatorPaused:  false,
+  lastSync:  null
+};
+
+// ── Navigation ─────────────────────────────────────────────────────────────────
+document.querySelectorAll('.nav-item[data-page]').forEach(item => {
+  item.addEventListener('click', () => navTo(item.dataset.page));
+});
+
+function navTo(pageId) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById(`page-${pageId}`).classList.add('active');
+  document.querySelector(`.nav-item[data-page="${pageId}"]`)?.classList.add('active');
+  if (pageId === 'debug')    refreshDebugList();
+  if (pageId === 'mappings') renderMappingsEditor();
+  if (pageId === 'codes')    renderCodesTable();
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────────
+function toast(msg, color = 'var(--green)') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.style.color = color; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ── Copy ───────────────────────────────────────────────────────────────────────
+function copyText(text, el) {
+  navigator.clipboard.writeText(text).then(() => {
+    if (el) { const orig = el.textContent; el.textContent = 'Copied!'; el.classList.add('copied'); setTimeout(() => { el.textContent = orig; el.classList.remove('copied'); }, 1600); }
+    toast(`Copied: ${text}`);
+  });
+}
+
+// ── Credentials ────────────────────────────────────────────────────────────────
+async function saveCredentials() {
+  const email = document.getElementById('cred-email').value.trim();
+  const password = document.getElementById('cred-password').value;
+  if (!email || !password) { toast('Enter email and password', 'var(--yellow)'); return; }
+  await window.cloakedAPI.saveCredentials({ email, password });
+  document.getElementById('cred-save-status').textContent = '✓ Saved';
+  toast('Credentials saved');
+  setTimeout(() => document.getElementById('cred-save-status').textContent = '', 3000);
+}
+async function loadCredentials() {
+  const c = await window.cloakedAPI.loadCredentials();
+  if (c) { document.getElementById('cred-email').value = c.email || ''; document.getElementById('cred-password').value = c.password || ''; }
+}
+
+// ── Mappings ───────────────────────────────────────────────────────────────────
+function getLabel(aliasId) {
+  const m = state.mappings[aliasId]; if (!m) return null;
+  return typeof m === 'string' ? m : m.label || null;
+}
+
+async function saveMappings() {
+  document.querySelectorAll('.mapping-row-data').forEach(row => {
+    const id = row.dataset.aliasId;
+    const label = row.querySelector('.mapping-label').value.trim();
+    const existing = state.mappings[id] || {};
+    state.mappings[id] = { ...(typeof existing === 'object' ? existing : {}), label };
+  });
+  await window.cloakedAPI.saveMappings(state.mappings);
+  toast('Mappings saved'); renderAll();
+}
+
+function renderMappingsEditor() {
+  const el = document.getElementById('mappings-editor');
+  if (!state.aliases.length) { el.innerHTML = `<div class="empty-state"><div class="empty-icon">⊞</div><h3>No aliases</h3><p>Sync first</p></div>`; return; }
+  el.innerHTML = state.aliases.map(a => {
+    const m = state.mappings[a.id] || {};
+    const cur = typeof m === 'string' ? m : (m.label || '');
+    const display = a.email || a.phone || a.name;
+    return `<div class="mapping-row-data" data-alias-id="${a.id}" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--accent2);background:var(--surface2);border:1px solid var(--border2);padding:7px 10px;border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${display}">${display}</div>
+      <input type="text" class="mapping-label" placeholder="e.g. Amazon" value="${cur}" style="background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:7px 10px;color:var(--text);font-size:13px;outline:none" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border2)'" />
+    </div>`;
+  }).join('');
+}
+
+// ── Render aliases ─────────────────────────────────────────────────────────────
+function renderAliases() {
+  const grid = document.getElementById('aliases-grid');
+  if (!state.aliases.length) { grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">◈</div><h3>No aliases</h3><p>Run a sync</p></div>`; return; }
+  grid.innerHTML = state.aliases.map(a => {
+    const name = getLabel(a.id) || '<span style="color:var(--muted);font-style:italic">Unlabeled</span>';
+    const ep = a.email ? `<div class="alias-pill email">✉ ${a.email}</div>` : '';
+    const pp = a.phone ? `<div class="alias-pill phone">☎ ${a.phone}</div>` : '';
+    return `<div class="alias-card">
+      <div class="alias-label">Account</div><div class="alias-account">${name}</div>
+      ${ep}${pp}
+      <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="copyText('${a.email||a.phone||''}')">Copy Alias</button></div>
+    </div>`;
+  }).join('');
+}
+
+// ── Codes table ────────────────────────────────────────────────────────────────
+function renderCodesTable() {
+  const wrap   = document.getElementById('codes-table-wrap');
+  const search = (document.getElementById('codes-search')?.value || '').toLowerCase();
+  const rows   = state.codes.filter(c => {
+    const alias = state.aliases.find(a => a.id === c.aliasId) || {};
+    const acct  = (alias.id && getLabel(alias.id)) || alias.name || '';
+    const val   = alias.email || alias.phone || '';
+    return !search || acct.toLowerCase().includes(search) || val.toLowerCase().includes(search) || c.code.includes(search);
+  });
+
+  if (!rows.length) {
+    wrap.innerHTML = state.codes.length
+      ? `<div class="empty-state"><div class="empty-icon">🔍</div><h3>No matches</h3><p>Try a different search</p></div>`
+      : `<div class="empty-state"><div class="empty-icon">◉</div><h3>No codes yet</h3><p>Run a sync</p></div>`;
+    return;
+  }
+
+  wrap.innerHTML = `<table class="codes-table">
+    <thead><tr><th>Code</th><th>Account</th><th>Alias</th><th>Preview</th><th>Received</th></tr></thead>
+    <tbody>${rows.map(c => {
+      const alias = state.aliases.find(a => a.id === c.aliasId) || {};
+      const acct  = (alias.id && getLabel(alias.id)) || alias.name || 'Unknown';
+      const val   = alias.email || alias.phone || '—';
+      return `<tr>
+        <td><span class="code-cell" onclick="copyText('${c.code}',this)">${c.code}</span></td>
+        <td style="font-weight:600">${acct}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--accent2)">${val}</td>
+        <td style="color:var(--muted);font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.preview||'—'}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${timeAgo(c.timestamp)}</td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+function renderDashboardCodes() {
+  const el = document.getElementById('dashboard-codes');
+  const recent = state.codes.slice(0, 6);
+  if (!recent.length) { el.innerHTML = `<div class="empty-state"><div class="empty-icon">◎</div><h3>No codes yet</h3><p>Click Sync</p></div>`; return; }
+  el.innerHTML = `<table class="codes-table">
+    <thead><tr><th>Code</th><th>Account</th><th>Alias</th><th>Received</th></tr></thead>
+    <tbody>${recent.map(c => {
+      const alias = state.aliases.find(a => a.id === c.aliasId) || {};
+      const acct  = (alias.id && getLabel(alias.id)) || alias.name || 'Unknown';
+      const val   = alias.email || alias.phone || '—';
+      return `<tr>
+        <td><span class="code-cell" onclick="copyText('${c.code}',this)">${c.code}</span></td>
+        <td style="font-weight:600">${acct}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--accent2)">${val}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${timeAgo(c.timestamp)}</td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+// ── Export CSV ─────────────────────────────────────────────────────────────────
+function exportCSV() {
+  if (!state.codes.length) { toast('No codes to export', 'var(--yellow)'); return; }
+  const header = 'account_name,alias,code,received_at';
+  const rows   = state.codes.map(c => {
+    const alias = state.aliases.find(a => a.id === c.aliasId) || {};
+    const acct  = (alias.id && getLabel(alias.id)) || alias.name || 'Unknown';
+    const val   = alias.email || alias.phone || '';
+    return `"${acct}","${val}","${c.code}","${c.timestamp}"`;
+  });
+  const blob = new Blob([header + '\n' + rows.join('\n')], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a'); a.href = url; a.download = `cloaked-codes-${Date.now()}.csv`; a.click();
+  URL.revokeObjectURL(url);
+  toast(`Exported ${rows.length} codes`);
+}
+
+// ── Stats ──────────────────────────────────────────────────────────────────────
+function updateStats() {
+  document.getElementById('stat-aliases').textContent = state.aliases.length || '—';
+  document.getElementById('stat-codes').textContent   = state.codes.length   || '—';
+  document.getElementById('stat-sync').textContent    = state.lastSync ? timeAgo(state.lastSync) : 'Never';
+  document.getElementById('alias-count').textContent  = state.aliases.length;
+  document.getElementById('codes-count').textContent  = state.codes.length;
+}
+
+function renderAll() { renderAliases(); renderDashboardCodes(); renderCodesTable(); updateStats(); }
+
+// ── Sync log ───────────────────────────────────────────────────────────────
+function syncLog(message, type = 'info') {
+  const log = document.getElementById('sync-log');
+  if (!log) return;
+  // Clear placeholder on first real entry
+  if (log.querySelector('span[style*="opacity"]')) log.innerHTML = '';
+  const colors = { info: 'var(--muted)', success: 'var(--green)', error: 'var(--red)', screenshot: 'var(--accent2)', warning: 'var(--yellow)' };
+  const line = document.createElement('div');
+  line.style.cssText = `color:${colors[type]||colors.info};margin-bottom:1px;word-break:break-all`;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+
+function copySyncLog() {
+  const log = document.getElementById('sync-log');
+  const text = [...log.querySelectorAll('div')].map(d => d.textContent).join('\n');
+  if (!text) { toast('Nothing to copy', 'var(--yellow)'); return; }
+  navigator.clipboard.writeText(text).then(() => toast('Log copied to clipboard'));
+}
+
+function clearSyncLog() {
+  const log = document.getElementById('sync-log');
+  log.innerHTML = '<span style="opacity:0.5">No sync activity yet…</span>';
+}
+
+// ── Sync ───────────────────────────────────────────────────────────────────────
+async function startSync() {
+  if (state.syncing) return;
+  const creds = await window.cloakedAPI.loadCredentials();
+  if (!creds?.email) { toast('Enter credentials in Settings', 'var(--yellow)'); navTo('settings'); return; }
+  state.syncing = true;
+  const btn = document.getElementById('sync-btn'), icon = document.getElementById('sync-icon');
+  btn.disabled = true; icon.innerHTML = '<span class="spinner"></span>';
+  syncLog('Starting sync…', 'info');
+
+  const unsub = window.cloakedAPI.onSyncStatus(({ stage, message }) => {
+    document.getElementById('sync-status-text').textContent = message;
+    // Color code by stage
+    const type = stage === 'error' ? 'error' : stage === 'done' ? 'success' : stage === 'screenshot' ? 'screenshot' : 'info';
+    syncLog(message, type);
+    if (stage === 'done' || stage === 'error')
+      setTimeout(() => document.getElementById('sync-status-text').textContent = stage === 'done' ? `Synced ${new Date().toLocaleTimeString()}` : '⚠ Failed', 1500);
+  });
+
+  const result = await window.cloakedAPI.syncCloaked(creds);
+  unsub();
+  state.syncing = false; btn.disabled = false; icon.textContent = '↻';
+
+  if (result.ok) {
+    state.aliases  = result.aliases || [];
+    state.codes    = result.codes   || [];
+    state.lastSync = result.syncedAt;
+    syncLog(`Done — ${state.aliases.length} aliases, ${state.codes.length} codes`, 'success');
+    renderAll();
+    toast(`Sync complete — ${state.aliases.length} aliases, ${state.codes.length} codes`);
+  } else {
+    syncLog(`FAILED: ${result.error}`, 'error');
+    toast(`Sync failed: ${result.error}`, 'var(--red)');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CREATOR
+// ══════════════════════════════════════════════════════════════════════════════
+
+function switchTab(tabId, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById(`tab-${tabId}`).classList.add('active');
+}
+
+// ── Single task form ───────────────────────────────────────────────────────────
+function addSingleTask() {
+  const account = document.getElementById('single-account').value.trim();
+  const type    = document.getElementById('single-type').value;
+  if (!account) { toast('Enter an account name', 'var(--yellow)'); return; }
+  state.tasks.push({ id: `task-${Date.now()}`, accountName: account, aliasType: type, status: 'pending', result: null });
+  document.getElementById('single-account').value = '';
+  document.getElementById('single-status').textContent = `✓ Added (${state.tasks.length} total)`;
+  setTimeout(() => document.getElementById('single-status').textContent = '', 2000);
+  renderTaskQueue(); toast(`Added: ${account}`);
+}
+
+// ── CSV handling ───────────────────────────────────────────────────────────────
+function handleCSVUpload(e) {
+  const file = e.target.files[0]; if (!file) return;
+  document.getElementById('csv-filename').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const lines = ev.target.result.split('\n').map(l => l.trim()).filter(Boolean);
+    const header = lines[0].toLowerCase();
+    const startIdx = (header.includes('account') || header.includes('name')) ? 1 : 0;
+    state.csvRows = [];
+    for (let i = startIdx; i < lines.length; i++) {
+      const cols = lines[i].split(',').map(c => c.replace(/^"|"$/g, '').trim());
+      const accountName = cols[0] || '';
+      const aliasType   = (cols[1] || 'email').toLowerCase().includes('phone') ? 'phone' : 'email';
+      if (accountName) state.csvRows.push({ accountName, aliasType, valid: true });
+    }
+    renderCSVPreview();
+  };
+  reader.readAsText(file);
+}
+
+function renderCSVPreview() {
+  const wrap = document.getElementById('csv-preview-wrap');
+  if (!state.csvRows.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  document.getElementById('csv-row-count').textContent = state.csvRows.length;
+  document.getElementById('csv-preview-body').innerHTML = state.csvRows.map((r, i) => `
+    <tr>
+      <td style="color:var(--muted)">${i+1}</td>
+      <td>${r.accountName}</td>
+      <td><span class="tag ${r.aliasType==='phone'?'tag-green':'tag-yellow'}">${r.aliasType}</span></td>
+      <td><span style="color:var(--green);font-size:10px">✓ Valid</span></td>
+    </tr>`).join('');
+}
+
+function addBulkTasks() {
+  if (!state.csvRows.length) return;
+  state.csvRows.forEach(r => state.tasks.push({ id: `task-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, accountName: r.accountName, aliasType: r.aliasType, status: 'pending', result: null }));
+  toast(`Added ${state.csvRows.length} tasks (${state.tasks.length} total)`);
+  clearCSV(); renderTaskQueue();
+}
+
+function clearCSV() {
+  state.csvRows = [];
+  document.getElementById('csv-preview-wrap').style.display = 'none';
+  document.getElementById('csv-filename').textContent = 'No file chosen';
+  document.getElementById('csv-file-input').value = '';
+}
+
+// ── Task queue rendering ───────────────────────────────────────────────────────
+function renderTaskQueue() {
+  const card    = document.getElementById('task-queue-card');
+  const runCard = document.getElementById('creator-run-card');
+  if (!state.tasks.length) { card.style.display = 'none'; runCard.style.display = 'none'; return; }
+  card.style.display = ''; runCard.style.display = '';
+
+  const pending  = state.tasks.filter(t => t.status === 'pending').length;
+  const done     = state.tasks.filter(t => t.status === 'done').length;
+  const failed   = state.tasks.filter(t => t.status === 'failed').length;
+  document.getElementById('task-queue-summary').textContent = `${pending} pending · ${done} done · ${failed} failed`;
+
+  document.getElementById('task-queue-body').innerHTML = state.tasks.map((t, i) => `
+    <tr id="trow-${t.id}">
+      <td style="color:var(--muted);font-family:var(--mono)">${i+1}</td>
+      <td style="font-weight:600">${t.accountName}</td>
+      <td><span class="tag ${t.aliasType==='phone'?'tag-green':'tag-yellow'}">${t.aliasType}</span></td>
+      <td><span class="task-status ${t.status}" id="tstatus-${t.id}">${statusLabel(t.status)}</span></td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--accent2)">${t.result||'—'}</td>
+    </tr>`).join('');
+}
+
+function statusLabel(s) { return {pending:'○ Pending',creating:'◌ Creating',done:'✓ Done',failed:'✕ Failed',waiting:'… Waiting'}[s]||s; }
+
+function clearTaskQueue() {
+  if (state.creatorRunning) { toast('Stop the creator first', 'var(--yellow)'); return; }
+  state.tasks = [];
+  renderTaskQueue();
+  document.getElementById('creator-run-card').style.display = 'none';
+}
+
+// ── Creator controls ───────────────────────────────────────────────────────────
+function creatorLog(msg, cls = '') {
+  const log = document.getElementById('creator-log');
+  const line = document.createElement('div');
+  line.className = `log-line ${cls}`;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  log.appendChild(line); log.scrollTop = log.scrollHeight;
+}
+
+async function creatorStart() {
+  const pending = state.tasks.filter(t => t.status === 'pending');
+  if (!pending.length) { toast('No pending tasks', 'var(--yellow)'); return; }
+  const creds = await window.cloakedAPI.loadCredentials();
+  if (!creds?.email) { toast('Enter credentials in Settings', 'var(--yellow)'); navTo('settings'); return; }
+
+  state.creatorRunning = true; state.creatorPaused = false;
+  document.getElementById('creator-start-btn').disabled = true;
+  document.getElementById('creator-pause-btn').disabled = false;
+  document.getElementById('creator-stop-btn').disabled  = false;
+  document.getElementById('creator-status-text').textContent = 'Running…';
+
+  const unsub = window.cloakedAPI.onCreatorEvent(handleCreatorEvent);
+  creatorState._unsub = unsub;
+
+  await window.cloakedAPI.creatorStart({
+    tasks:    pending,
+    email:    creds.email,
+    password: creds.password
+  });
+}
+
+async function creatorPauseResume() {
+  if (!state.creatorPaused) {
+    await window.cloakedAPI.creatorPause();
+    state.creatorPaused = true;
+    document.getElementById('creator-pause-btn').textContent = '▶ Resume';
+    document.getElementById('creator-status-text').textContent = 'Paused';
+    creatorLog('Paused by user.', 'waiting');
+  } else {
+    await window.cloakedAPI.creatorResume();
+    state.creatorPaused = false;
+    document.getElementById('creator-pause-btn').textContent = '⏸ Pause';
+    document.getElementById('creator-status-text').textContent = 'Running…';
+    creatorLog('Resumed.', 'info');
+  }
+}
+
+async function creatorStop() {
+  await window.cloakedAPI.creatorStop();
+  creatorLog('Stop requested…', 'waiting');
+  document.getElementById('creator-status-text').textContent = 'Stopping…';
+}
+
+function creatorDone() {
+  state.creatorRunning = false; state.creatorPaused = false;
+  document.getElementById('creator-start-btn').disabled = false;
+  document.getElementById('creator-pause-btn').disabled = true;
+  document.getElementById('creator-pause-btn').textContent = '⏸ Pause';
+  document.getElementById('creator-stop-btn').disabled  = true;
+  document.getElementById('countdown-wrap').style.display = 'none';
+  if (creatorState._unsub) { creatorState._unsub(); creatorState._unsub = null; }
+}
+const creatorState = { _unsub: null };
+
+// Countdown state
+let _countdownTotal = 0;
+
+function handleCreatorEvent(ev) {
+  switch (ev.type) {
+    case 'status':
+      document.getElementById('creator-status-text').textContent = ev.message;
+      creatorLog(ev.message, 'info');
+      break;
+
+    case 'task-start': {
+      const t = state.tasks.find(t => t.id === ev.id);
+      if (t) t.status = 'creating';
+      updateTaskRow(ev.id);
+      creatorLog(`Creating: ${ev.message}`, 'info');
+      document.getElementById('countdown-wrap').style.display = 'none';
+      break;
+    }
+    case 'task-done': {
+      const t = state.tasks.find(t => t.id === ev.id);
+      if (t) { t.status = 'done'; t.result = ev.aliasValue; }
+      // Auto-save mapping
+      state.mappings[ev.mappingId] = { label: ev.accountName };
+      window.cloakedAPI.saveMappings(state.mappings);
+      updateTaskRow(ev.id);
+      creatorLog(`✓ Created ${ev.aliasType} alias for ${ev.accountName}: ${ev.aliasValue}`, 'success');
+      toast(`Created: ${ev.aliasValue}`);
+      renderTaskQueue();
+      break;
+    }
+    case 'task-failed': {
+      const t = state.tasks.find(t => t.id === ev.id);
+      if (t) { t.status = 'failed'; t.result = ev.error; }
+      updateTaskRow(ev.id);
+      creatorLog(`✕ Failed (${ev.error})`, 'error');
+      renderTaskQueue();
+      break;
+    }
+    case 'waiting': {
+      const t = state.tasks.find(t => t.id === ev.id);
+      if (t) t.status = 'waiting';
+      updateTaskRow(ev.id);
+      _countdownTotal = ev.delaySec;
+      const wrap = document.getElementById('countdown-wrap');
+      wrap.style.display = '';
+      document.getElementById('countdown-bar').style.width = '100%';
+      document.getElementById('countdown-remaining').textContent = `${ev.delaySec}s`;
+      document.getElementById('countdown-label-text').textContent = `Waiting ${ev.delaySec}s before next alias…`;
+      creatorLog(`Waiting ${ev.delaySec}s before next alias (bell-curve delay)`, 'waiting');
+      break;
+    }
+    case 'countdown': {
+      const pct = _countdownTotal > 0 ? Math.round((ev.remaining / _countdownTotal) * 100) : 0;
+      document.getElementById('countdown-bar').style.width = `${pct}%`;
+      document.getElementById('countdown-remaining').textContent = `${ev.remaining}s`;
+      break;
+    }
+    case 'complete':
+      creatorLog('All tasks complete!', 'success');
+      document.getElementById('creator-status-text').textContent = 'Complete';
+      toast('Alias creation complete!');
+      creatorDone(); renderTaskQueue();
+      break;
+    case 'stopped':
+      creatorLog(ev.message, 'waiting');
+      document.getElementById('creator-status-text').textContent = 'Stopped';
+      creatorDone(); renderTaskQueue();
+      break;
+    case 'error':
+      creatorLog(`Error: ${ev.message}`, 'error');
+      document.getElementById('creator-status-text').textContent = 'Error';
+      toast(`Creator error: ${ev.message}`, 'var(--red)');
+      creatorDone(); renderTaskQueue();
+      break;
+  }
+}
+
+function updateTaskRow(taskId) {
+  const t = state.tasks.find(t => t.id === taskId); if (!t) return;
+  const statusEl = document.getElementById(`tstatus-${taskId}`);
+  if (statusEl) { statusEl.textContent = statusLabel(t.status); statusEl.className = `task-status ${t.status}`; }
+}
+
+// ── Debug ──────────────────────────────────────────────────────────────────────
+async function saveDebugSettings() {
+  const enabled = document.getElementById('debug-toggle').checked;
+  document.getElementById('debug-label').textContent = enabled ? 'Enabled' : 'Disabled';
+  document.getElementById('debug-label').style.color = enabled ? 'var(--green)' : 'var(--muted)';
+  document.getElementById('debug-mode-val').textContent = enabled ? 'ON' : 'OFF';
+  document.getElementById('debug-mode-val').style.color  = enabled ? 'var(--green)' : 'var(--red)';
+  await window.cloakedAPI.saveDebugSettings({ enabled });
+  toast(enabled ? '📸 Debug ON' : 'Debug OFF');
+}
+async function loadDebugSettings() {
+  const s = await window.cloakedAPI.loadDebugSettings();
+  const e = s?.enabled || false;
+  document.getElementById('debug-toggle').checked = e;
+  document.getElementById('debug-label').textContent = e ? 'Enabled' : 'Disabled';
+  document.getElementById('debug-label').style.color = e ? 'var(--green)' : 'var(--muted)';
+  document.getElementById('debug-mode-val').textContent = e ? 'ON' : 'OFF';
+  document.getElementById('debug-mode-val').style.color  = e ? 'var(--green)' : 'var(--red)';
+}
+async function refreshDebugList() {
+  const files = await window.cloakedAPI.listDebugScreenshots();
+  document.getElementById('debug-count').textContent = files.length;
+  document.getElementById('debug-count').style.display = files.length > 0 ? '' : 'none';
+  const grid = document.getElementById('debug-screenshots-grid');
+  if (!files.length) { grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">📸</div><h3>No screenshots</h3><p>Enable debug mode, run a sync</p></div>`; return; }
+  grid.innerHTML = files.map(f => {
+    const label = f.name.replace(/\.png$/, '').replace(/_/g, ' ');
+    const src   = `file://${f.path.replace(/\\/g, '/')}`;
+    return `<div class="screenshot-card">
+      <img class="screenshot-thumb" src="${src}" alt="${label}" onclick="openLightbox('${src}','${label}')" onerror="this.style.minHeight='80px'" />
+      <div class="screenshot-info">
+        <div class="screenshot-name">${label}</div>
+        <div class="screenshot-meta"><span>${new Date(f.mtime).toLocaleTimeString()} · ${(f.size/1024).toFixed(1)}KB</span>
+          <button class="screenshot-del" onclick="deleteScreenshot('${f.path.replace(/\\/g,'\\\\')}')" >🗑</button>
+        </div>
+      </div></div>`;
+  }).join('');
+}
+async function deleteScreenshot(p) { await window.cloakedAPI.deleteDebugScreenshot(p); refreshDebugList(); toast('Deleted'); }
+async function clearAllScreenshots() { await window.cloakedAPI.clearDebugScreenshots(); refreshDebugList(); toast('Cleared'); }
+function openLightbox(src, label) { document.getElementById('lightbox-img').src = src; document.getElementById('lightbox-label').textContent = label; document.getElementById('lightbox').classList.add('open'); }
+function closeLightbox() { document.getElementById('lightbox').classList.remove('open'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+// ── Browser mode ───────────────────────────────────────────────────────────────
+async function saveBrowserMode(mode) {
+  await window.cloakedAPI.saveBrowserMode(mode);
+  document.getElementById('bmode-status').textContent = `✓ ${mode} mode active on next run`;
+  document.getElementById('bmode-status').style.color = 'var(--green)';
+  setTimeout(() => document.getElementById('bmode-status').textContent = '', 3000);
+  toast(`Browser: ${mode}`);
+}
+async function loadBrowserMode() {
+  const m = await window.cloakedAPI.loadBrowserMode();
+  const r = document.querySelector(`input[name="browser-mode"][value="${m}"]`);
+  if (r) r.checked = true;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function timeAgo(iso) {
+  const d = Date.now() - new Date(iso).getTime();
+  if (d < 60000)    return 'just now';
+  if (d < 3600000)  return `${Math.floor(d/60000)}m ago`;
+  if (d < 86400000) return `${Math.floor(d/3600000)}h ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+// ── Debug Console ──────────────────────────────────────────────────────────────
+const dcState = {
+  sync:    { entries: [], errors: 0 },
+  creator: { entries: [], errors: 0 },
+  sms:     { entries: [], errors: 0 },
+  active:  'sync',
+  open:    false
+};
+
+function toggleDebugConsole() {
+  dcState.open = !dcState.open;
+  document.getElementById('debug-console').classList.toggle('open', dcState.open);
+  document.getElementById('debug-console-toggle').classList.toggle('active', dcState.open);
+  if (dcState.open) {
+    // Clear error badge when opened
+    document.getElementById('debug-error-badge').classList.remove('visible');
+  }
+}
+
+function switchDcTab(panel, el) {
+  document.querySelectorAll('.dc-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.dc-panel').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById(`dc-panel-${panel}`).classList.add('active');
+  dcState.active = panel;
+  // Clear that panel's error badge
+  const badge = document.getElementById(`dc-badge-${panel}`);
+  badge.textContent = '0';
+  badge.classList.remove('has-errors');
+  dcState[panel].errors = 0;
+}
+
+function appendDcEntry(panel, level, message, ts) {
+  const log = document.getElementById(`dc-log-${panel}`);
+  if (!log) return;
+  // Clear placeholder
+  const placeholder = log.querySelector('span');
+  if (placeholder) log.innerHTML = '';
+
+  const entry   = document.createElement('div');
+  entry.className = `dc-entry ${level}`;
+  const time = new Date(ts).toLocaleTimeString('en-US', { hour12: false, hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  const labels = { info:'INFO', success:'SUCCESS', warning:'WARN', error:'ERROR', verbose:'VERBOSE' };
+  entry.innerHTML = `<span class="dc-ts">${time}</span><span class="dc-lvl">${labels[level]||level}</span><span class="dc-msg">${escapeHtml(message)}</span>`;
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+
+  // Update entry count
+  dcState[panel].entries.push({ time, level, message });
+  document.getElementById(`dc-count-${panel}`).textContent = `${dcState[panel].entries.length} entries`;
+
+  // Error badge handling
+  if (level === 'error' || level === 'warning') {
+    dcState[panel].errors++;
+    const badge = document.getElementById(`dc-badge-${panel}`);
+    badge.textContent = dcState[panel].errors;
+    badge.classList.add('has-errors');
+    // Global badge on toggle button if console is closed
+    if (!dcState.open) {
+      const globalBadge = document.getElementById('debug-error-badge');
+      globalBadge.textContent = Object.values(dcState).filter(v => v.errors).reduce((s, v) => s + (v.errors||0), 0);
+      globalBadge.classList.add('visible');
+    }
+  }
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function copyDcPanel(panel) {
+  const entries = dcState[panel].entries;
+  if (!entries.length) { toast('Nothing to copy', 'var(--yellow)'); return; }
+  const text = entries.map(e => `[${e.time}] [${e.level.toUpperCase()}] ${e.message}`).join('\n');
+  navigator.clipboard.writeText(text).then(() => toast(`${panel} log copied`));
+}
+
+function copyDcLog() {
+  const active = dcState.active;
+  copyDcPanel(active);
+}
+
+function clearDcPanel(panel) {
+  dcState[panel].entries = [];
+  dcState[panel].errors  = 0;
+  const log = document.getElementById(`dc-log-${panel}`);
+  const labels = { sync: 'sync', creator: 'creator', sms: 'SMS scan' };
+  log.innerHTML = `<span style="color:var(--muted);opacity:.4">No ${labels[panel]} activity yet…</span>`;
+  document.getElementById(`dc-count-${panel}`).textContent = '0 entries';
+  const badge = document.getElementById(`dc-badge-${panel}`);
+  badge.textContent = '0';
+  badge.classList.remove('has-errors');
+}
+
+function clearDcAll() {
+  ['sync','creator','sms'].forEach(p => clearDcPanel(p));
+  document.getElementById('debug-error-badge').classList.remove('visible');
+  toast('All debug logs cleared');
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+async function init() {
+  await loadCredentials();
+  await loadDebugSettings();
+  await loadBrowserMode();
+  state.mappings = await window.cloakedAPI.loadMappings();
+  renderAll();
+
+  // Subscribe to debug log events from main process
+  window.cloakedAPI.onDebugLog(({ panel, level, message, ts }) => {
+    appendDcEntry(panel, level, message, ts);
+  });
+}
+init();
+</script>
+</body>
+</html>
