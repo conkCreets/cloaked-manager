@@ -65,9 +65,16 @@ async function ensurePlaywrightChromium() {
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
 
+// Read-only fine-grained token — can only read releases on this repo, nothing else.
+// Replace the placeholder below with your token, then run npm run publish.
+const BAKED_UPDATE_TOKEN = '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';
+
 function configureUpdater() {
-  const ghToken = store.get('ghToken', '');
-  if (ghToken) autoUpdater.requestHeaders = { Authorization: `token ${ghToken}` };
+  const userToken = store.get('ghToken', '');
+  const token = userToken || BAKED_UPDATE_TOKEN;
+  if (token && !token.startsWith('PASTE_')) {
+    autoUpdater.requestHeaders = { Authorization: `token ${token}` };
+  }
 }
 
 autoUpdater.on('checking-for-update', () => {

@@ -7,7 +7,8 @@
     "start": "electron .",
     "install-playwright": "playwright install chromium",
     "build": "electron-builder --win",
-    "publish": "electron-builder --win --publish always"
+    "publish": "electron-builder --win --publish always",
+    "release": "node scripts/release.js"
   },
   "dependencies": {
     "electron-store": "^8.1.0",
