@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2.3
+- Fix GitHub Actions publishing draft releases instead of published releases (add releaseType: release)
+- Update GitHub Actions to Node.js 24
+
 ## v2.2.2
 - Repo is now public — remove all token logic, auto-updates work with no authentication required
 

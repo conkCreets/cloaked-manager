@@ -1,6 +1,6 @@
 {
   "name": "cloaked-manager",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "description": "Personal Cloaked alias & 2FA manager",
   "main": "src/main.js",
   "scripts": {
@@ -33,7 +33,8 @@
     "publish": {
       "provider": "github",
       "owner": "conkCreets",
-      "repo": "cloaked-manager"
+      "repo": "cloaked-manager",
+      "releaseType": "release"
     },
     "files": [
       "src/**/*",
