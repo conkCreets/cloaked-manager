@@ -489,10 +489,8 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);height:100vh
 
       <div class="card">
         <div class="card-title">Software Updates</div>
-        <p style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">Provide a GitHub token with <span style="color:var(--accent2);font-family:var(--mono)">repo</span> scope to enable auto-updates from private releases. <span style="color:var(--accent2);cursor:pointer;text-decoration:underline" onclick="window.cloakedAPI.openExternal('https://github.com/settings/tokens')">Generate token ↗</span></p>
-        <div class="field"><label>GitHub Token</label><input type="password" id="gh-token-input" placeholder="ghp_xxxxxxxxxxxx" /></div>
-        <div class="row" style="margin-top:6px;gap:10px;flex-wrap:wrap">
-          <button class="btn btn-ghost" onclick="saveGhToken()">Save Token</button>
+        <p style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">Updates are delivered automatically via GitHub releases. Click below to check now.</p>
+        <div class="row" style="gap:10px;flex-wrap:wrap">
           <button class="btn btn-primary" id="update-check-btn" onclick="checkForUpdates()">↻ Check for Updates</button>
           <span id="update-status-text" style="font-size:12px;font-family:var(--mono);color:var(--muted)"></span>
         </div>
@@ -1375,9 +1373,6 @@ async function init() {
   await loadBrowserMode();
   state.mappings = await window.cloakedAPI.loadMappings();
   renderAll();
-
-  const ghToken = await window.cloakedAPI.loadGhToken();
-  if (ghToken) document.getElementById('gh-token-input').value = ghToken;
 
   // Subscribe to IPC events from main process
   window.cloakedAPI.onDebugLog(({ panel, level, message, ts }) => appendDcEntry(panel, level, message, ts));

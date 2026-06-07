@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2.1
+- Remove GitHub token input from Settings — update token is now baked in, no user setup required
+- Check for Updates button works out of the box
+
 ## v2.2.0
 - EXE packaging via electron-builder (NSIS installer, `npm run build`)
 - Auto-update via GitHub releases using electron-updater (`npm run publish`)
