@@ -26,21 +26,10 @@ function createWindow() {
 }
 
 async function ensurePlaywrightChromium() {
-  const { chromium } = require('playwright');
-  let installed = false;
-  try {
-    installed = fs.existsSync(chromium.executablePath());
-  } catch (_) {
-    installed = false;
-  }
-
-  if (installed) {
-    mainWindow.webContents.send('playwright-status', { stage: 'ready' });
-    return;
-  }
-
-  mainWindow.webContents.send('playwright-status', { stage: 'installing', message: 'Setting up browser — this only happens once…' });
-
+  // Always run `playwright install` — it's idempotent and exits silently in <1s when
+  // everything is already present. A pre-check via chromium.executablePath() only
+  // covers the full browser binary and misses chromium_headless_shell, causing the
+  // headless launcher to fail even when the check passes.
   await new Promise((resolve) => {
     let playwrightCli;
     try { playwrightCli = require.resolve('playwright/cli'); }

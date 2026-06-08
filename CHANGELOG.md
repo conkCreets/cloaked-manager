@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.4.2
+- Fix headless browser missing after first install — removed unreliable pre-check that only verified the full Chromium binary and missed chromium_headless_shell; playwright install now always runs on startup (idempotent, silent when already installed)
+
 ## v2.4.1
 - Fix first-launch browser install hanging on packaged EXE — spawned installer now runs as Node.js via ELECTRON_RUN_AS_NODE
 - Browser install progress messages now captured from stderr as well as stdout
