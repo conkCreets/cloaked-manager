@@ -20,12 +20,20 @@ contextBridge.exposeInMainWorld('cloakedAPI', {
   saveAliases: (a) => ipcRenderer.invoke('save-aliases', a),
   loadAliases: ()  => ipcRenderer.invoke('load-aliases'),
 
+  // Codes
+  saveCodes:        (c) => ipcRenderer.invoke('save-codes', c),
+  loadCodes:        ()  => ipcRenderer.invoke('load-codes'),
+  clearCodeHistory:       ()       => ipcRenderer.invoke('clear-code-history'),
+  removeCodeFingerprints: (ids)   => ipcRenderer.invoke('remove-code-fingerprints', ids),
+
   // Mappings
   saveMappings: (m) => ipcRenderer.invoke('save-mappings', m),
   loadMappings: ()  => ipcRenderer.invoke('load-mappings'),
 
   // Scraper
   syncCloaked: (creds) => ipcRenderer.invoke('sync-cloaked', creds),
+  syncCodes:   (creds) => ipcRenderer.invoke('sync-codes',   creds),
+  syncAliases: (creds) => ipcRenderer.invoke('sync-aliases', creds),
   onSyncStatus: (cb) => {
     const h = (_e, d) => cb(d);
     ipcRenderer.on('sync-status', h);

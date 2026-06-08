@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.4.0
+- SMS code scraping from All Inboxes — finds 6-digit codes across all aliases
+- Codes persist across app restarts via electron-store
+- One entry per alias — new code for an alias replaces the old one automatically
+- Fingerprint deduplication — tracks seen codes so re-syncing doesn't duplicate entries
+- Delete single aliases or codes with the ✕ button
+- Mass delete — select multiple aliases/codes with checkboxes and delete in bulk
+- Aliases tab: dedicated Sync button that only syncs aliases (skips code scraping)
+- Codes tab: dedicated Sync button that only syncs codes (skips alias scraping)
+- Clear Code History button in Settings resets seen-code fingerprints
+- Codebase refactored into modular file structure (src/ipc/, src/scraper/, src/creator/)
+
 ## v2.3.2
 - Fix About section version number — now reads dynamically from app instead of being hardcoded
 

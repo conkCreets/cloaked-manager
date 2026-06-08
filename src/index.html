@@ -319,7 +319,16 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);height:100vh
 
     <!-- Aliases -->
     <div class="page" id="page-aliases">
-      <div class="page-header"><h1>Aliases</h1><p>All phone numbers and email aliases fetched from your Cloaked account</p></div>
+      <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between">
+        <div><h1>Aliases</h1><p>All phone numbers and email aliases fetched from your Cloaked account</p></div>
+        <button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="startAliasesSync()">↻ Sync</button>
+      </div>
+      <div id="aliases-selection-bar" style="display:none;align-items:center;gap:10px;margin-bottom:12px">
+        <span id="aliases-selection-count" style="font-size:13px;color:var(--muted)"></span>
+        <button class="btn btn-ghost btn-sm" onclick="selectAllAliases()">Select All</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteSelectedAliases()">Delete Selected</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearAliasSelection()">Clear</button>
+      </div>
       <div id="aliases-grid" class="alias-grid">
         <div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">◈</div><h3>No aliases synced</h3><p>Run a sync to pull your aliases from Cloaked</p></div>
       </div>
@@ -331,9 +340,12 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);height:100vh
       <div class="card">
         <div class="codes-toolbar">
           <input type="text" id="codes-search" placeholder="Search account, alias, or code…" oninput="renderCodesTable()" />
-          <div style="margin-left:auto;display:flex;gap:8px">
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+            <span id="codes-selection-count" style="font-size:12px;color:var(--muted);display:none"></span>
+            <button id="codes-delete-selected-btn" class="btn btn-ghost btn-sm" style="color:var(--red);display:none" onclick="deleteSelectedCodes()">Delete Selected</button>
+            <button id="codes-clear-selection-btn" class="btn btn-ghost btn-sm" style="display:none" onclick="clearCodeSelection()">Clear</button>
             <button class="btn btn-ghost btn-sm" onclick="exportCSV()">↓ Export CSV</button>
-            <button class="btn btn-ghost btn-sm" onclick="startSync()">↻ Sync</button>
+            <button class="btn btn-ghost btn-sm" onclick="startCodesSync()">↻ Sync</button>
           </div>
         </div>
         <div id="codes-table-wrap">
@@ -465,6 +477,12 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);height:100vh
         <div class="row" style="gap:10px;align-items:center">
           <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="clearSession()">Clear Saved Session</button>
           <span id="session-status" style="font-size:12px;font-family:var(--mono);color:var(--muted)"></span>
+        </div>
+        <hr class="divider" style="margin:14px 0">
+        <p style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">Clear the record of which SMS codes have already been seen. The next sync will re-surface any codes currently in your inbox.</p>
+        <div class="row" style="gap:10px;align-items:center">
+          <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="clearCodeHistory()">Clear Code History</button>
+          <span id="code-history-status" style="font-size:12px;font-family:var(--mono);color:var(--muted)"></span>
         </div>
       </div>
 
@@ -627,7 +645,9 @@ const state = {
   syncing:   false,
   creatorRunning: false,
   creatorPaused:  false,
-  lastSync:  null
+  lastSync:  null,
+  selectedAliases: new Set(),
+  selectedCodes:   new Set(),
 };
 
 // ── Navigation ─────────────────────────────────────────────────────────────────
@@ -661,6 +681,12 @@ function copyText(text, el) {
 }
 
 // ── Credentials ────────────────────────────────────────────────────────────────
+async function clearCodeHistory() {
+  await window.cloakedAPI.clearCodeHistory();
+  const el = document.getElementById('code-history-status');
+  if (el) { el.textContent = 'Cleared'; setTimeout(() => el.textContent = '', 2000); }
+}
+
 async function clearSession() {
   await window.cloakedAPI.clearSession();
   const el = document.getElementById('session-status');
@@ -715,19 +741,116 @@ function renderMappingsEditor() {
 }
 
 // ── Render aliases ─────────────────────────────────────────────────────────────
+async function deleteAlias(id) {
+  state.aliases = state.aliases.filter(a => a.id !== id);
+  state.selectedAliases.delete(id);
+  await window.cloakedAPI.saveAliases(state.aliases);
+  renderAll();
+}
+
+async function deleteCode(idx) {
+  const code = state.codes[idx];
+  if (!code) return;
+  state.selectedCodes.delete(code.id);
+  state.codes.splice(idx, 1);
+  await Promise.all([
+    window.cloakedAPI.saveCodes(state.codes),
+    window.cloakedAPI.removeCodeFingerprints([code.id]),
+  ]);
+  renderAll();
+}
+
+function toggleAliasSelection(id, checked) {
+  checked ? state.selectedAliases.add(id) : state.selectedAliases.delete(id);
+  updateAliasSelectionBar();
+}
+
+function selectAllAliases() {
+  state.aliases.forEach(a => state.selectedAliases.add(a.id));
+  renderAliases();
+}
+
+function clearAliasSelection() {
+  state.selectedAliases.clear();
+  renderAliases();
+}
+
+async function deleteSelectedAliases() {
+  if (!state.selectedAliases.size) return;
+  state.aliases = state.aliases.filter(a => !state.selectedAliases.has(a.id));
+  state.selectedAliases.clear();
+  await window.cloakedAPI.saveAliases(state.aliases);
+  renderAll();
+}
+
+function updateAliasSelectionBar() {
+  const bar   = document.getElementById('aliases-selection-bar');
+  const count = document.getElementById('aliases-selection-count');
+  const n = state.selectedAliases.size;
+  bar.style.display   = n > 0 ? 'flex' : 'none';
+  count.textContent   = `${n} selected`;
+}
+
+function toggleCodeSelection(id, checked) {
+  checked ? state.selectedCodes.add(id) : state.selectedCodes.delete(id);
+  updateCodeSelectionBar();
+}
+
+function selectAllCodes() {
+  state.codes.forEach(c => state.selectedCodes.add(c.id));
+  renderCodesTable();
+}
+
+function clearCodeSelection() {
+  state.selectedCodes.clear();
+  renderCodesTable();
+}
+
+async function deleteSelectedCodes() {
+  if (!state.selectedCodes.size) return;
+  const removedIds = [...state.selectedCodes];
+  state.codes = state.codes.filter(c => !state.selectedCodes.has(c.id));
+  state.selectedCodes.clear();
+  await Promise.all([
+    window.cloakedAPI.saveCodes(state.codes),
+    window.cloakedAPI.removeCodeFingerprints(removedIds),
+  ]);
+  renderAll();
+}
+
+function updateCodeSelectionBar() {
+  const n        = state.selectedCodes.size;
+  const countEl  = document.getElementById('codes-selection-count');
+  const deleteEl = document.getElementById('codes-delete-selected-btn');
+  const clearEl  = document.getElementById('codes-clear-selection-btn');
+  if (!countEl) return;
+  countEl.style.display  = n > 0 ? '' : 'none';
+  deleteEl.style.display = n > 0 ? '' : 'none';
+  clearEl.style.display  = n > 0 ? '' : 'none';
+  countEl.textContent    = `${n} selected`;
+}
+
 function renderAliases() {
   const grid = document.getElementById('aliases-grid');
-  if (!state.aliases.length) { grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">◈</div><h3>No aliases</h3><p>Run a sync</p></div>`; return; }
+  if (!state.aliases.length) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">◈</div><h3>No aliases</h3><p>Run a sync</p></div>`;
+    updateAliasSelectionBar();
+    return;
+  }
   grid.innerHTML = state.aliases.map(a => {
-    const name = getLabel(a.id) || a.name || '<span style="color:var(--muted);font-style:italic">Unlabeled</span>';
-    const ep = a.email ? `<div class="alias-pill email">✉ ${a.email}</div>` : '';
-    const pp = a.phone ? `<div class="alias-pill phone">☎ ${a.phone}</div>` : '';
+    const name    = getLabel(a.id) || a.name || '<span style="color:var(--muted);font-style:italic">Unlabeled</span>';
+    const ep      = a.email ? `<div class="alias-pill email">✉ ${a.email}</div>` : '';
+    const pp      = a.phone ? `<div class="alias-pill phone">☎ ${a.phone}</div>` : '';
+    const checked = state.selectedAliases.has(a.id) ? 'checked' : '';
     return `<div class="alias-card">
-      <div class="alias-label">Account</div><div class="alias-account">${name}</div>
+      <input type="checkbox" ${checked} onchange="toggleAliasSelection('${a.id}', this.checked)" style="position:absolute;top:10px;left:10px;cursor:pointer;accent-color:var(--accent)" title="Select">
+      <button onclick="deleteAlias('${a.id}')" title="Delete alias" style="position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;line-height:1;padding:2px 4px" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">✕</button>
+      <div class="alias-label" style="padding-left:20px">Account</div><div class="alias-account">${name}</div>
       ${ep}${pp}
       <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="copyText('${a.email||a.phone||''}')">Copy Alias</button></div>
     </div>`;
   }).join('');
+  updateAliasSelectionBar();
 }
 
 // ── Codes table ────────────────────────────────────────────────────────────────
@@ -735,10 +858,10 @@ function renderCodesTable() {
   const wrap   = document.getElementById('codes-table-wrap');
   const search = (document.getElementById('codes-search')?.value || '').toLowerCase();
   const rows   = state.codes.filter(c => {
-    const alias = state.aliases.find(a => a.id === c.aliasId) || {};
-    const acct  = (alias.id && getLabel(alias.id)) || alias.name || '';
-    const val   = alias.email || alias.phone || '';
-    return !search || acct.toLowerCase().includes(search) || val.toLowerCase().includes(search) || c.code.includes(search);
+    const aliasObj = state.aliases.find(a => a.name === c.alias) || {};
+    const label    = (aliasObj.id && getLabel(aliasObj.id)) || c.alias || '';
+    const phone    = aliasObj.phone || '';
+    return !search || label.toLowerCase().includes(search) || phone.includes(search) || c.code.includes(search) || (c.alias||'').toLowerCase().includes(search);
   });
 
   if (!rows.length) {
@@ -748,20 +871,28 @@ function renderCodesTable() {
     return;
   }
 
+  const allVisibleSelected = rows.length > 0 && rows.every(c => state.selectedCodes.has(c.id));
   wrap.innerHTML = `<table class="codes-table">
-    <thead><tr><th>Code</th><th>Account</th><th>Alias</th><th>Preview</th><th>Received</th></tr></thead>
+    <thead><tr>
+      <th><input type="checkbox" ${allVisibleSelected ? 'checked' : ''} onchange="this.checked ? selectAllCodes() : clearCodeSelection()" style="cursor:pointer;accent-color:var(--accent)" title="Select all"></th>
+      <th>Code</th><th>Alias</th><th>Phone</th><th>Received</th><th></th>
+    </tr></thead>
     <tbody>${rows.map(c => {
-      const alias = state.aliases.find(a => a.id === c.aliasId) || {};
-      const acct  = (alias.id && getLabel(alias.id)) || alias.name || 'Unknown';
-      const val   = alias.email || alias.phone || '—';
+      const aliasObj = state.aliases.find(a => a.name === c.alias) || {};
+      const label    = (aliasObj.id && getLabel(aliasObj.id)) || c.alias || 'Unknown';
+      const phone    = aliasObj.phone || '—';
+      const idx      = state.codes.indexOf(c);
+      const checked  = state.selectedCodes.has(c.id) ? 'checked' : '';
       return `<tr>
+        <td><input type="checkbox" ${checked} onchange="toggleCodeSelection('${c.id.replace(/'/g,"\\'")}', this.checked)" style="cursor:pointer;accent-color:var(--accent)"></td>
         <td><span class="code-cell" onclick="copyText('${c.code}',this)">${c.code}</span></td>
-        <td style="font-weight:600">${acct}</td>
-        <td style="font-family:var(--mono);font-size:11px;color:var(--accent2)">${val}</td>
-        <td style="color:var(--muted);font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.preview||'—'}</td>
-        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${timeAgo(c.timestamp)}</td>
+        <td style="font-weight:600">${label}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--green)">${phone}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${c.date||'—'}${c.scrapedAt ? `<br><span style="font-size:10px;color:var(--muted);opacity:.7">${timeAgo(c.scrapedAt)}</span>` : ''}</td>
+        <td><button onclick="deleteCode(${idx})" title="Delete" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;padding:2px 6px" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">✕</button></td>
       </tr>`;
     }).join('')}</tbody></table>`;
+  updateCodeSelectionBar();
 }
 
 function renderDashboardCodes() {
@@ -769,16 +900,16 @@ function renderDashboardCodes() {
   const recent = state.codes.slice(0, 6);
   if (!recent.length) { el.innerHTML = `<div class="empty-state"><div class="empty-icon">◎</div><h3>No codes yet</h3><p>Click Sync</p></div>`; return; }
   el.innerHTML = `<table class="codes-table">
-    <thead><tr><th>Code</th><th>Account</th><th>Alias</th><th>Received</th></tr></thead>
+    <thead><tr><th>Code</th><th>Alias</th><th>Phone</th><th>Received</th></tr></thead>
     <tbody>${recent.map(c => {
-      const alias = state.aliases.find(a => a.id === c.aliasId) || {};
-      const acct  = (alias.id && getLabel(alias.id)) || alias.name || 'Unknown';
-      const val   = alias.email || alias.phone || '—';
+      const aliasObj = state.aliases.find(a => a.name === c.alias) || {};
+      const label    = (aliasObj.id && getLabel(aliasObj.id)) || c.alias || 'Unknown';
+      const phone    = aliasObj.phone || '—';
       return `<tr>
         <td><span class="code-cell" onclick="copyText('${c.code}',this)">${c.code}</span></td>
-        <td style="font-weight:600">${acct}</td>
-        <td style="font-family:var(--mono);font-size:11px;color:var(--accent2)">${val}</td>
-        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${timeAgo(c.timestamp)}</td>
+        <td style="font-weight:600">${label}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--green)">${phone}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${c.date||'—'}${c.scrapedAt ? `<br><span style="font-size:10px;color:var(--muted);opacity:.7">${timeAgo(c.scrapedAt)}</span>` : ''}</td>
       </tr>`;
     }).join('')}</tbody></table>`;
 }
@@ -786,12 +917,12 @@ function renderDashboardCodes() {
 // ── Export CSV ─────────────────────────────────────────────────────────────────
 function exportCSV() {
   if (!state.codes.length) { toast('No codes to export', 'var(--yellow)'); return; }
-  const header = 'account_name,alias,code,received_at';
+  const header = 'alias,phone,code,received_at';
   const rows   = state.codes.map(c => {
-    const alias = state.aliases.find(a => a.id === c.aliasId) || {};
-    const acct  = (alias.id && getLabel(alias.id)) || alias.name || 'Unknown';
-    const val   = alias.email || alias.phone || '';
-    return `"${acct}","${val}","${c.code}","${c.timestamp}"`;
+    const aliasObj = state.aliases.find(a => a.name === c.alias) || {};
+    const label    = (aliasObj.id && getLabel(aliasObj.id)) || c.alias || 'Unknown';
+    const phone    = aliasObj.phone || '';
+    return `"${label}","${phone}","${c.code}","${c.date||''}"`;
   });
   const blob = new Blob([header + '\n' + rows.join('\n')], { type: 'text/csv' });
   const url  = URL.createObjectURL(blob);
@@ -863,9 +994,16 @@ async function startSync() {
   if (result.ok) {
     const prevMap    = new Map(state.aliases.map(a => [a.id, a]));
     state.aliases    = result.aliases || [];
-    state.codes      = result.codes   || [];
+    const newCodes      = result.codes || [];
+    const updatedAliases = new Set(newCodes.map(c => c.alias));
+    // Remove old fingerprints for aliases being replaced so they don't block future syncs
+    const replaced = state.codes.filter(c => updatedAliases.has(c.alias));
+    if (replaced.length) await window.cloakedAPI.removeCodeFingerprints(replaced.map(c => c.id));
+    // One entry per alias — new codes replace old ones, others are kept
+    state.codes = [...newCodes, ...state.codes.filter(c => !updatedAliases.has(c.alias))];
     state.lastSync   = result.syncedAt;
     await window.cloakedAPI.saveAliases(state.aliases);
+    await window.cloakedAPI.saveCodes(state.codes);
     const newCount     = state.aliases.filter(a => !prevMap.has(a.id)).length;
     const updatedCount = state.aliases.filter(a => prevMap.has(a.id) && prevMap.get(a.id).name !== a.name).length;
     const parts = [];
@@ -880,6 +1018,72 @@ async function startSync() {
   } else {
     syncLog(`FAILED: ${result.error}`, 'error');
     toast(`Sync failed: ${result.error}`, 'var(--red)');
+  }
+}
+
+async function startAliasesSync() {
+  if (state.syncing) return;
+  const creds = await window.cloakedAPI.loadCredentials();
+  if (!creds?.email) { toast('Enter credentials in Settings', 'var(--yellow)'); navTo('settings'); return; }
+  state.syncing = true;
+
+  const unsub = window.cloakedAPI.onSyncStatus(({ stage, message }) => {
+    const type = stage === 'error' ? 'error' : stage === 'done' ? 'success' : 'info';
+    syncLog(message, type);
+  });
+
+  const result = await window.cloakedAPI.syncAliases(creds);
+  unsub();
+  state.syncing = false;
+
+  if (result.ok) {
+    const prevMap      = new Map(state.aliases.map(a => [a.id, a]));
+    state.aliases      = result.aliases || [];
+    await window.cloakedAPI.saveAliases(state.aliases);
+    const newCount     = state.aliases.filter(a => !prevMap.has(a.id)).length;
+    const updatedCount = state.aliases.filter(a => prevMap.has(a.id) && prevMap.get(a.id).name !== a.name).length;
+    const parts = [];
+    if (newCount > 0)     parts.push(`${newCount} new alias${newCount === 1 ? '' : 'es'}`);
+    if (updatedCount > 0) parts.push(`${updatedCount} updated`);
+    const msg = state.aliases.length === 0 ? 'no aliases found' : parts.length === 0 ? 'no new aliases' : parts.join(', ');
+    syncLog(`Aliases sync done — ${msg}`, 'success');
+    renderAll();
+    toast(`Aliases synced — ${msg}`);
+  } else {
+    syncLog(`Aliases sync failed: ${result.error}`, 'error');
+    toast(`Aliases sync failed: ${result.error}`, 'var(--red)');
+  }
+}
+
+async function startCodesSync() {
+  if (state.syncing) return;
+  const creds = await window.cloakedAPI.loadCredentials();
+  if (!creds?.email) { toast('Enter credentials in Settings', 'var(--yellow)'); navTo('settings'); return; }
+  state.syncing = true;
+
+  const unsub = window.cloakedAPI.onSyncStatus(({ stage, message }) => {
+    const type = stage === 'error' ? 'error' : stage === 'done' ? 'success' : 'info';
+    syncLog(message, type);
+  });
+
+  const result = await window.cloakedAPI.syncCodes(creds);
+  unsub();
+  state.syncing = false;
+
+  if (result.ok) {
+    const newCodes       = result.codes || [];
+    const updatedAliases = new Set(newCodes.map(c => c.alias));
+    const replaced       = state.codes.filter(c => updatedAliases.has(c.alias));
+    if (replaced.length) await window.cloakedAPI.removeCodeFingerprints(replaced.map(c => c.id));
+    state.codes = [...newCodes, ...state.codes.filter(c => !updatedAliases.has(c.alias))];
+    await window.cloakedAPI.saveCodes(state.codes);
+    const msg = newCodes.length === 0 ? 'no new codes' : `${newCodes.length} new code${newCodes.length === 1 ? '' : 's'}`;
+    syncLog(`Codes sync done — ${msg}`, 'success');
+    renderAll();
+    toast(`Codes synced — ${msg}`);
+  } else {
+    syncLog(`Codes sync failed: ${result.error}`, 'error');
+    toast(`Codes sync failed: ${result.error}`, 'var(--red)');
   }
 }
 
@@ -1400,6 +1604,7 @@ async function init() {
   await loadBrowserMode();
   state.mappings = await window.cloakedAPI.loadMappings();
   state.aliases  = await window.cloakedAPI.loadAliases();
+  state.codes    = await window.cloakedAPI.loadCodes();
   const version  = await window.cloakedAPI.getVersion();
   document.getElementById('app-version-tag').textContent = `v${version}`;
   renderAll();
