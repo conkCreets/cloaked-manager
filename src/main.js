@@ -1,8 +1,17 @@
 const { app, BrowserWindow } = require('electron');
 const path   = require('path');
 const fs     = require('fs');
+const os     = require('os');
 const { spawn } = require('child_process');
 const { setMainWindow } = require('./shared');
+
+// Pin Playwright's browser path to an app-specific directory so it never collides
+// with other Playwright-based software (e.g. other Electron apps) that may have a
+// partial ms-playwright installation. Must be set before any playwright require.
+process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(
+  process.env.LOCALAPPDATA || path.join(os.homedir(), '.local', 'share'),
+  'cloaked-manager-browsers'
+);
 
 // Register all IPC handlers at startup
 require('./ipc/window');

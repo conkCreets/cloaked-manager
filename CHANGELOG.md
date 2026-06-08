@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.4.3
+- Fix browser install conflicting with other Playwright-based software — Playwright now uses an app-specific isolated browser path (cloaked-manager-browsers) instead of the shared ms-playwright directory
+
 ## v2.4.2
 - Fix headless browser missing after first install — removed unreliable pre-check that only verified the full Chromium binary and missed chromium_headless_shell; playwright install now always runs on startup (idempotent, silent when already installed)
 
