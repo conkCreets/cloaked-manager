@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4.1
+- Fix first-launch browser install hanging on packaged EXE — spawned installer now runs as Node.js via ELECTRON_RUN_AS_NODE
+- Browser install progress messages now captured from stderr as well as stdout
+
 ## v2.4.0
 - SMS code scraping from All Inboxes — finds 6-digit codes across all aliases
 - Codes persist across app restarts via electron-store

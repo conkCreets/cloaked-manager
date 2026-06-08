@@ -46,12 +46,17 @@ async function ensurePlaywrightChromium() {
     try { playwrightCli = require.resolve('playwright/cli'); }
     catch (_) { playwrightCli = require.resolve('playwright-core/cli'); }
 
-    const proc = spawn(process.execPath, [playwrightCli, 'install', 'chromium'], { stdio: 'pipe' });
+    const proc = spawn(process.execPath, [playwrightCli, 'install', 'chromium'], {
+      stdio: 'pipe',
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+    });
 
-    proc.stdout.on('data', d => {
+    const onData = d => {
       const msg = d.toString().trim();
       if (msg) mainWindow.webContents.send('playwright-status', { stage: 'installing', message: msg });
-    });
+    };
+    proc.stdout.on('data', onData);
+    proc.stderr.on('data', onData);
 
     proc.on('close', code => {
       mainWindow.webContents.send('playwright-status', {
