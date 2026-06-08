@@ -59,19 +59,31 @@ async function ensurePlaywrightChromium() {
   mainWindow.webContents.send('playwright-status', { stage: 'installing', message: 'Setting up browser — this only happens once…' });
 
   let playwrightCli;
-  try {
-    playwrightCli = require.resolve('playwright/cli');
-    pwLog(`playwright CLI resolved to: ${playwrightCli}`);
-  } catch (e) {
-    try {
-      playwrightCli = require.resolve('playwright-core/cli');
-      pwLog(`playwright-core CLI resolved to: ${playwrightCli}`);
-    } catch (e2) {
-      pwLog(`ERROR: Could not resolve playwright CLI: ${e2.message}`);
-      mainWindow.webContents.send('playwright-status', { stage: 'error', message: 'Browser setup failed — playwright CLI not found' });
-      return;
+  // Try package subpath exports first (works in dev mode).
+  // In packaged apps the exports field blocks './cli', so fall back to deriving
+  // the path from the main entry and converting the asar virtual path to the
+  // real unpacked path that a subprocess can actually read.
+  for (const pkg of ['playwright', 'playwright-core']) {
+    try { playwrightCli = require.resolve(`${pkg}/cli`); break; } catch (_) {}
+  }
+  if (!playwrightCli) {
+    for (const pkg of ['playwright', 'playwright-core']) {
+      try {
+        const pkgRoot = path.dirname(require.resolve(pkg));
+        for (const rel of ['cli.js', path.join('lib', 'cli', 'cli.js')]) {
+          const candidate = path.join(pkgRoot, rel).replace(/app\.asar([\\/])/g, 'app.asar.unpacked$1');
+          if (fs.existsSync(candidate)) { playwrightCli = candidate; break; }
+        }
+      } catch (_) {}
+      if (playwrightCli) break;
     }
   }
+  if (!playwrightCli) {
+    pwLog('ERROR: Could not find playwright CLI in any expected location');
+    mainWindow.webContents.send('playwright-status', { stage: 'error', message: 'Browser setup failed — playwright CLI not found' });
+    return;
+  }
+  pwLog(`playwright CLI resolved to: ${playwrightCli}`);
 
   await new Promise((resolve) => {
     pwLog(`Spawning: ${process.execPath} [${playwrightCli}, install, chromium]`);

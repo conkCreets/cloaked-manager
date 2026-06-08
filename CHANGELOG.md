@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.4.5
+- Fix playwright CLI resolution in packaged app — the ./cli subpath export is blocked by Electron's strict package export enforcement; now falls back to deriving the path from the main package entry and converting the asar virtual path to the real unpacked filesystem path
+
 ## v2.4.4
 - Add verbose install diagnostics to debug console — logs execPath, CLI path, PLAYWRIGHT_BROWSERS_PATH, spawn result, and directory contents after install
 
