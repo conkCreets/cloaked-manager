@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.4.4
+- Add verbose install diagnostics to debug console — logs execPath, CLI path, PLAYWRIGHT_BROWSERS_PATH, spawn result, and directory contents after install
+
 ## v2.4.3
 - Fix browser install conflicting with other Playwright-based software — Playwright now uses an app-specific isolated browser path (cloaked-manager-browsers) instead of the shared ms-playwright directory
 
