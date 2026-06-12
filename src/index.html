@@ -110,7 +110,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);height:100vh
 
 /* Creator run panel */
 .creator-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;}
-.creator-log{background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:14px;font-family:var(--mono);font-size:11px;color:var(--muted);max-height:160px;overflow-y:auto;line-height:1.8;}
+.creator-log{background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:14px;font-family:var(--mono);font-size:11px;color:var(--muted);max-height:160px;overflow-y:auto;line-height:1.8;user-select:text;cursor:text;}
 .creator-log::-webkit-scrollbar{width:4px;}
 .creator-log::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
 .log-line{margin-bottom:2px;}
@@ -220,9 +220,10 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);height:100vh
 .dc-tab-badge.has-errors{display:inline-block;}
 .dc-panel{display:none;flex:1;flex-direction:column;overflow:hidden;}
 .dc-panel.active{display:flex;}
-.dc-log{flex:1;overflow-y:auto;padding:10px 12px;font-family:var(--mono);font-size:10.5px;line-height:1.8;}
+.dc-log{flex:1;overflow-y:auto;padding:10px 12px;font-family:var(--mono);font-size:10.5px;line-height:1.8;user-select:text;cursor:text;}
 .dc-log::-webkit-scrollbar{width:4px;}
 .dc-log::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+#sync-log{user-select:text;cursor:text;}
 .dc-entry{display:flex;gap:8px;margin-bottom:1px;word-break:break-all;}
 .dc-ts{color:var(--muted);opacity:.5;flex-shrink:0;font-size:10px;}
 .dc-lvl{flex-shrink:0;font-weight:700;font-size:10px;width:52px;}
@@ -391,6 +392,23 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);height:100vh
         <div class="creator-log" id="creator-log"></div>
       </div>
 
+      <!-- Skipped tasks log -->
+      <div class="card" id="skipped-log-card" style="display:none">
+        <div style="display:flex;align-items:center;margin-bottom:14px">
+          <div class="card-title" style="margin-bottom:0">Skipped Tasks</div>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="exportSkippedCSV()">↓ Export CSV</button>
+            <button class="btn btn-ghost btn-sm" onclick="clearSkippedLog()">Clear</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="task-table">
+            <thead><tr><th>#</th><th>Profile Name</th><th>Email / Username</th><th>Password</th><th>Reason</th></tr></thead>
+            <tbody id="skipped-log-body"></tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- Input tabs -->
       <div class="card">
         <div class="tab-bar">
@@ -401,13 +419,9 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);height:100vh
         <!-- Single form -->
         <div class="tab-panel active" id="tab-single">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-            <div class="field"><label>Account Name</label><input type="text" id="single-account" placeholder="e.g. Amazon" /></div>
-            <div class="field"><label>Alias Type</label>
-              <select id="single-type">
-                <option value="email">Email Alias</option>
-                <option value="phone">Phone Number</option>
-              </select>
-            </div>
+            <div class="field"><label>Profile Name</label><input type="text" id="single-username" placeholder="e.g. johndoe" /></div>
+            <div class="field"><label>Email / Username</label><input type="email" id="single-email" placeholder="e.g. john@gmail.com" /></div>
+            <div class="field"><label>Password</label><input type="text" id="single-password" placeholder="Password for this account" /></div>
           </div>
           <div class="row" style="margin-top:4px;gap:10px">
             <button class="btn btn-primary" onclick="addSingleTask()">+ Add to Queue</button>
@@ -418,8 +432,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);height:100vh
         <!-- Bulk CSV -->
         <div class="tab-panel" id="tab-bulk">
           <p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.6">
-            Upload a CSV with columns: <span style="color:var(--accent2);font-family:var(--mono)">account_name, alias_type</span><br/>
-            <span style="font-size:11px">alias_type must be <code style="color:var(--green)">email</code> or <code style="color:var(--green)">phone</code></span>
+            Upload a CSV with columns: <span style="color:var(--accent2);font-family:var(--mono)">profile_name, email_username, password</span>
           </p>
           <div class="row" style="gap:10px;margin-bottom:14px">
             <input type="file" id="csv-file-input" accept=".csv" style="display:none" onchange="handleCSVUpload(event)" />
@@ -429,7 +442,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);height:100vh
           <div id="csv-preview-wrap" style="display:none">
             <div style="font-size:11px;font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Preview (<span id="csv-row-count">0</span> rows)</div>
             <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:7px">
-              <table class="csv-preview-table" id="csv-preview-table"><thead><tr><th>#</th><th>Account Name</th><th>Alias Type</th><th>Status</th></tr></thead><tbody id="csv-preview-body"></tbody></table>
+              <table class="csv-preview-table" id="csv-preview-table"><thead><tr><th>#</th><th>Profile Name</th><th>Email</th><th>Status</th></tr></thead><tbody id="csv-preview-body"></tbody></table>
             </div>
             <div class="row" style="margin-top:12px;gap:10px">
               <button class="btn btn-primary" onclick="addBulkTasks()">+ Add All to Queue</button>
@@ -450,7 +463,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);height:100vh
         </div>
         <div style="overflow-x:auto">
           <table class="task-table">
-            <thead><tr><th>#</th><th>Account Name</th><th>Type</th><th>Status</th><th>Result</th></tr></thead>
+            <thead><tr><th>#</th><th>Profile Name</th><th>Email / Username</th><th>Status</th><th>Phone Generated</th></tr></thead>
             <tbody id="task-queue-body"></tbody>
           </table>
         </div>
@@ -627,6 +640,17 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);height:100vh
   </div>
 </div>
 
+<!-- Alias detail modal -->
+<div id="alias-detail-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9000;align-items:center;justify-content:center;" onclick="if(event.target===this)closeAliasDetail()">
+  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:12px;padding:28px 32px;width:420px;max-width:90vw;">
+    <div style="display:flex;align-items:center;margin-bottom:20px">
+      <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent)">Alias Details</div>
+      <div style="margin-left:auto"><button class="btn btn-ghost btn-sm" onclick="closeAliasDetail()">✕</button></div>
+    </div>
+    <div id="alias-detail-body" style="display:flex;flex-direction:column;gap:14px"></div>
+  </div>
+</div>
+
 <div id="lightbox" onclick="closeLightbox()">
   <button id="lightbox-close" onclick="closeLightbox()">✕</button>
   <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()" />
@@ -640,7 +664,8 @@ const state = {
   aliases:   [],
   codes:     [],
   mappings:  {},
-  tasks:     [],   // creator task queue
+  tasks:        [],   // creator task queue
+  skippedTasks: [],   // tasks skipped due to duplicates
   csvRows:   [],   // parsed CSV rows pending confirmation
   syncing:   false,
   creatorRunning: false,
@@ -847,10 +872,63 @@ function renderAliases() {
       <button onclick="deleteAlias('${a.id}')" title="Delete alias" style="position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;line-height:1;padding:2px 4px" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">✕</button>
       <div class="alias-label" style="padding-left:20px">Account</div><div class="alias-account">${name}</div>
       ${ep}${pp}
-      <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="copyText('${a.email||a.phone||''}')">Copy Alias</button></div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="copyText('${a.email||a.phone||''}')">Copy Alias</button>
+        <button class="btn btn-ghost btn-sm" onclick="openAliasDetail('${a.id}')">Details</button>
+      </div>
     </div>`;
   }).join('');
   updateAliasSelectionBar();
+}
+
+let _detailAliasId = null;
+
+function openAliasDetail(id) {
+  const a = state.aliases.find(a => a.id === id);
+  if (!a) return;
+  _detailAliasId = id;
+  const label = getLabel(a.id) || a.name || 'Unlabeled';
+  const readRow = (title, value) => `
+    <div style="background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:12px 14px">
+      <div style="font-size:10px;font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:5px">${title}</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="font-family:var(--mono);font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${value || '—'}</div>
+        ${value ? `<button class="btn btn-ghost btn-sm" onclick="copyText(this.dataset.v)" data-v="${value}">Copy</button>` : ''}
+      </div>
+    </div>`;
+  const editRow = (title, inputId, value, type = 'text') => `
+    <div>
+      <div style="font-size:10px;font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:5px">${title}</div>
+      <input id="${inputId}" type="${type}" value="${(value || '').replace(/"/g, '&quot;')}" placeholder="Not set"
+        style="width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;box-sizing:border-box"
+        onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border2)'" />
+    </div>`;
+  document.getElementById('alias-detail-body').innerHTML = [
+    readRow('Account', label),
+    readRow('Phone Number', a.phone),
+    editRow('Email / Username', 'detail-email', a.accountEmail),
+    editRow('Password', 'detail-password', a.password, 'password'),
+    `<div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-primary" onclick="saveAliasDetail()">Save</button>
+      <button class="btn btn-ghost" onclick="closeAliasDetail()">Cancel</button>
+    </div>`,
+  ].join('');
+  document.getElementById('alias-detail-modal').style.display = 'flex';
+}
+
+async function saveAliasDetail() {
+  const a = state.aliases.find(a => a.id === _detailAliasId);
+  if (!a) return;
+  a.accountEmail = document.getElementById('detail-email').value.trim() || null;
+  a.password     = document.getElementById('detail-password').value || null;
+  await window.cloakedAPI.saveAliases(state.aliases);
+  closeAliasDetail();
+  toast('Alias updated');
+}
+
+function closeAliasDetail() {
+  document.getElementById('alias-detail-modal').style.display = 'none';
+  _detailAliasId = null;
 }
 
 // ── Codes table ────────────────────────────────────────────────────────────────
@@ -942,6 +1020,15 @@ function updateStats() {
 
 function renderAll() { renderAliases(); renderDashboardCodes(); renderCodesTable(); updateStats(); }
 
+function mergeCredentials(newAliases, oldAliases) {
+  const byPhone = new Map(oldAliases.filter(a => a.phone).map(a => [a.phone, a]));
+  return newAliases.map(a => {
+    const old = a.phone ? byPhone.get(a.phone) : null;
+    if (!old) return a;
+    return { ...a, accountEmail: old.accountEmail || a.accountEmail || null, password: old.password || a.password || null };
+  });
+}
+
 // ── Sync log ───────────────────────────────────────────────────────────────
 function syncLog(message, type = 'info') {
   const log = document.getElementById('sync-log');
@@ -993,7 +1080,7 @@ async function startSync() {
 
   if (result.ok) {
     const prevMap    = new Map(state.aliases.map(a => [a.id, a]));
-    state.aliases    = result.aliases || [];
+    state.aliases    = mergeCredentials(result.aliases || [], state.aliases);
     const newCodes      = result.codes || [];
     const updatedAliases = new Set(newCodes.map(c => c.alias));
     // Remove old fingerprints for aliases being replaced so they don't block future syncs
@@ -1038,7 +1125,7 @@ async function startAliasesSync() {
 
   if (result.ok) {
     const prevMap      = new Map(state.aliases.map(a => [a.id, a]));
-    state.aliases      = result.aliases || [];
+    state.aliases      = mergeCredentials(result.aliases || [], state.aliases);
     await window.cloakedAPI.saveAliases(state.aliases);
     const newCount     = state.aliases.filter(a => !prevMap.has(a.id)).length;
     const updatedCount = state.aliases.filter(a => prevMap.has(a.id) && prevMap.get(a.id).name !== a.name).length;
@@ -1098,16 +1185,28 @@ function switchTab(tabId, el) {
   document.getElementById(`tab-${tabId}`).classList.add('active');
 }
 
+const QUEUE_MAX = 25;
+
+async function persistQueue() {
+  await window.cloakedAPI.saveQueue(state.tasks.slice(-QUEUE_MAX));
+}
+
 // ── Single task form ───────────────────────────────────────────────────────────
-function addSingleTask() {
-  const account = document.getElementById('single-account').value.trim();
-  const type    = document.getElementById('single-type').value;
-  if (!account) { toast('Enter an account name', 'var(--yellow)'); return; }
-  state.tasks.push({ id: `task-${Date.now()}`, accountName: account, aliasType: type, status: 'pending', result: null });
-  document.getElementById('single-account').value = '';
-  document.getElementById('single-status').textContent = `✓ Added (${state.tasks.length} total)`;
+async function addSingleTask() {
+  const username = document.getElementById('single-username').value.trim();
+  const email    = document.getElementById('single-email').value.trim();
+  const password = document.getElementById('single-password').value.trim();
+  if (!username) { toast('Enter a profile name', 'var(--yellow)'); return; }
+  if (username.includes('.')) { toast('Periods are not allowed in Profile Names', 'var(--red)'); return; }
+  if (state.tasks.length >= QUEUE_MAX) { toast(`Queue is full (max ${QUEUE_MAX})`, 'var(--yellow)'); return; }
+  state.tasks.push({ id: `task-${Date.now()}`, username, email, password, status: 'pending', result: null });
+  document.getElementById('single-username').value = '';
+  document.getElementById('single-email').value    = '';
+  document.getElementById('single-password').value = '';
+  document.getElementById('single-status').textContent = `✓ Added (${state.tasks.length}/${QUEUE_MAX})`;
   setTimeout(() => document.getElementById('single-status').textContent = '', 2000);
-  renderTaskQueue(); toast(`Added: ${account}`);
+  renderTaskQueue(); toast(`Added: ${username}`);
+  await persistQueue();
 }
 
 // ── CSV handling ───────────────────────────────────────────────────────────────
@@ -1118,13 +1217,15 @@ function handleCSVUpload(e) {
   reader.onload = ev => {
     const lines = ev.target.result.split('\n').map(l => l.trim()).filter(Boolean);
     const header = lines[0].toLowerCase();
-    const startIdx = (header.includes('account') || header.includes('name')) ? 1 : 0;
+    const delim  = header.includes('\t') ? '\t' : ',';
+    const startIdx = (header.includes('profile') || header.includes('name') || header.includes('email')) ? 1 : 0;
     state.csvRows = [];
     for (let i = startIdx; i < lines.length; i++) {
-      const cols = lines[i].split(',').map(c => c.replace(/^"|"$/g, '').trim());
-      const accountName = cols[0] || '';
-      const aliasType   = (cols[1] || 'email').toLowerCase().includes('phone') ? 'phone' : 'email';
-      if (accountName) state.csvRows.push({ accountName, aliasType, valid: true });
+      const cols     = lines[i].split(delim).map(c => c.replace(/^"|"$/g, '').trim());
+      const username = (cols[0] || '').replace(/\./g, '_');
+      const email    = cols[1] || '';
+      const password = cols[2] || '';
+      if (username) state.csvRows.push({ username, email, password, valid: true });
     }
     renderCSVPreview();
   };
@@ -1139,17 +1240,17 @@ function renderCSVPreview() {
   document.getElementById('csv-preview-body').innerHTML = state.csvRows.map((r, i) => `
     <tr>
       <td style="color:var(--muted)">${i+1}</td>
-      <td>${r.accountName}</td>
-      <td><span class="tag ${r.aliasType==='phone'?'tag-green':'tag-yellow'}">${r.aliasType}</span></td>
+      <td style="font-family:var(--mono);font-size:11px">${r.username}</td>
+      <td style="font-family:var(--mono);font-size:11px">${r.email || '—'}</td>
       <td><span style="color:var(--green);font-size:10px">✓ Valid</span></td>
     </tr>`).join('');
 }
 
-function addBulkTasks() {
+async function addBulkTasks() {
   if (!state.csvRows.length) return;
-  state.csvRows.forEach(r => state.tasks.push({ id: `task-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, accountName: r.accountName, aliasType: r.aliasType, status: 'pending', result: null }));
+  state.csvRows.forEach(r => state.tasks.push({ id: `task-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, username: r.username, email: r.email, password: r.password, status: 'pending', result: null }));
   toast(`Added ${state.csvRows.length} tasks (${state.tasks.length} total)`);
-  clearCSV(); renderTaskQueue();
+  clearCSV(); renderTaskQueue(); await persistQueue();
 }
 
 function clearCSV() {
@@ -1174,20 +1275,51 @@ function renderTaskQueue() {
   document.getElementById('task-queue-body').innerHTML = state.tasks.map((t, i) => `
     <tr id="trow-${t.id}">
       <td style="color:var(--muted);font-family:var(--mono)">${i+1}</td>
-      <td style="font-weight:600">${t.accountName}</td>
-      <td><span class="tag ${t.aliasType==='phone'?'tag-green':'tag-yellow'}">${t.aliasType}</span></td>
+      <td style="font-weight:600">${t.username}</td>
+      <td style="font-family:var(--mono);font-size:11px">${t.email||'—'}</td>
       <td><span class="task-status ${t.status}" id="tstatus-${t.id}">${statusLabel(t.status)}</span></td>
       <td style="font-family:var(--mono);font-size:11px;color:var(--accent2)">${t.result||'—'}</td>
     </tr>`).join('');
 }
 
-function statusLabel(s) { return {pending:'○ Pending',creating:'◌ Creating',done:'✓ Done',failed:'✕ Failed',waiting:'… Waiting'}[s]||s; }
+function statusLabel(s) { return {pending:'○ Pending',creating:'◌ Creating',done:'✓ Done',failed:'✕ Failed',waiting:'… Waiting','never-created':'✕ Failed — Never Created',skipped:'— Skipped — Already Exists'}[s]||s; }
 
-function clearTaskQueue() {
+function renderSkippedLog() {
+  const card = document.getElementById('skipped-log-card');
+  if (!state.skippedTasks.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  document.getElementById('skipped-log-body').innerHTML = state.skippedTasks.map((t, i) => `
+    <tr>
+      <td style="color:var(--muted);font-family:var(--mono)">${i + 1}</td>
+      <td style="font-weight:600">${t.username || '—'}</td>
+      <td style="font-family:var(--mono);font-size:11px">${t.email || '—'}</td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${t.password ? '••••••••' : '—'}</td>
+      <td style="font-size:11px;color:var(--yellow)">${t.reason}</td>
+    </tr>`).join('');
+}
+
+function exportSkippedCSV() {
+  if (!state.skippedTasks.length) return;
+  const rows = [['profile_name', 'email_username', 'password', 'reason'],
+    ...state.skippedTasks.map(t => [t.username || '', t.email || '', t.password || '', t.reason])];
+  const csv  = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `skipped-tasks-${Date.now()}.csv` });
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('Skipped tasks exported');
+}
+
+function clearSkippedLog() {
+  state.skippedTasks = [];
+  renderSkippedLog();
+}
+
+async function clearTaskQueue() {
   if (state.creatorRunning) { toast('Stop the creator first', 'var(--yellow)'); return; }
   state.tasks = [];
   renderTaskQueue();
   document.getElementById('creator-run-card').style.display = 'none';
+  await persistQueue();
 }
 
 // ── Creator controls ───────────────────────────────────────────────────────────
@@ -1205,6 +1337,29 @@ async function creatorStart() {
   const creds = await window.cloakedAPI.loadCredentials();
   if (!creds?.email) { toast('Enter credentials in Settings', 'var(--yellow)'); navTo('settings'); return; }
 
+  // Duplicate check — skip tasks whose email/username already exists in aliases
+  const existingEmails = new Set(state.aliases.map(a => a.accountEmail).filter(Boolean));
+  const toRun = [];
+  for (const t of pending) {
+    if (t.email && existingEmails.has(t.email)) {
+      t.status = 'skipped';
+      const reason = 'Already exists in Aliases';
+      state.skippedTasks.push({ username: t.username, email: t.email, password: t.password, reason, skippedAt: new Date().toISOString() });
+      creatorLog(`Skipped: ${t.username} — ${t.email} already exists`, 'warning');
+    } else {
+      if (t.email) existingEmails.add(t.email);
+      toRun.push(t);
+    }
+  }
+  const skippedCount = pending.length - toRun.length;
+  if (skippedCount) renderSkippedLog();
+  if (!toRun.length) {
+    renderTaskQueue(); await persistQueue();
+    toast('All pending tasks already exist — nothing to create', 'var(--yellow)'); return;
+  }
+  if (skippedCount) toast(`${skippedCount} duplicate(s) skipped`, 'var(--yellow)');
+  renderTaskQueue(); await persistQueue();
+
   state.creatorRunning = true; state.creatorPaused = false;
   document.getElementById('creator-start-btn').disabled = true;
   document.getElementById('creator-pause-btn').disabled = false;
@@ -1215,7 +1370,7 @@ async function creatorStart() {
   creatorState._unsub = unsub;
 
   await window.cloakedAPI.creatorStart({
-    tasks:    pending,
+    tasks:    toRun,
     email:    creds.email,
     password: creds.password
   });
@@ -1257,7 +1412,7 @@ const creatorState = { _unsub: null };
 // Countdown state
 let _countdownTotal = 0;
 
-function handleCreatorEvent(ev) {
+async function handleCreatorEvent(ev) {
   switch (ev.type) {
     case 'status':
       document.getElementById('creator-status-text').textContent = ev.message;
@@ -1276,33 +1431,43 @@ function handleCreatorEvent(ev) {
       const t = state.tasks.find(t => t.id === ev.id);
       if (t) { t.status = 'done'; t.result = ev.aliasValue; }
       // Auto-save mapping
-      state.mappings[ev.mappingId] = { label: ev.accountName };
-      window.cloakedAPI.saveMappings(state.mappings);
+      state.mappings[ev.mappingId] = { label: ev.username };
+      // Add alias immediately — no need to scrape later
+      const newAlias = { id: ev.mappingId, name: ev.username, phone: ev.aliasValue, email: null, username: ev.username, accountEmail: ev.email || null, password: ev.password || null, createdAt: new Date().toISOString() };
+      state.aliases = state.aliases.filter(a => a.id !== ev.mappingId);
+      state.aliases.push(newAlias);
+      await Promise.all([
+        window.cloakedAPI.saveMappings(state.mappings),
+        window.cloakedAPI.saveAliases(state.aliases),
+      ]);
       updateTaskRow(ev.id);
-      creatorLog(`✓ Created ${ev.aliasType} alias for ${ev.accountName}: ${ev.aliasValue}`, 'success');
+      creatorLog(`✓ Created phone alias for ${ev.username}: ${ev.aliasValue}`, 'success');
       toast(`Created: ${ev.aliasValue}`);
       renderTaskQueue();
+      renderAliases();
+      updateStats();
+      await persistQueue();
       break;
     }
     case 'task-failed': {
       const t = state.tasks.find(t => t.id === ev.id);
       if (t) { t.status = 'failed'; t.result = ev.error; }
       updateTaskRow(ev.id);
+      await persistQueue();
       creatorLog(`✕ Failed (${ev.error})`, 'error');
       renderTaskQueue();
       break;
     }
     case 'waiting': {
-      const t = state.tasks.find(t => t.id === ev.id);
-      if (t) t.status = 'waiting';
-      updateTaskRow(ev.id);
+      const nextTask = state.tasks.find(t => t.status === 'pending');
+      if (nextTask) { nextTask.status = 'waiting'; updateTaskRow(nextTask.id); }
       _countdownTotal = ev.delaySec;
       const wrap = document.getElementById('countdown-wrap');
-      wrap.style.display = '';
+      wrap.style.display = 'block';
       document.getElementById('countdown-bar').style.width = '100%';
       document.getElementById('countdown-remaining').textContent = `${ev.delaySec}s`;
-      document.getElementById('countdown-label-text').textContent = `Waiting ${ev.delaySec}s before next alias…`;
-      creatorLog(`Waiting ${ev.delaySec}s before next alias (bell-curve delay)`, 'waiting');
+      document.getElementById('countdown-label-text').textContent = ev.label || `Waiting ${ev.delaySec}s before next alias…`;
+      creatorLog(ev.label ? `${ev.label} (${ev.delaySec}s)` : `Waiting ${ev.delaySec}s before next alias…`, 'waiting');
       break;
     }
     case 'countdown': {
@@ -1311,6 +1476,12 @@ function handleCreatorEvent(ev) {
       document.getElementById('countdown-remaining').textContent = `${ev.remaining}s`;
       break;
     }
+    case 'rate-limited':
+      creatorLog(`⚠ Rate limited: ${ev.message}`, 'error');
+      document.getElementById('creator-status-text').textContent = '⚠ Rate Limited';
+      toast(ev.message, 'var(--red)');
+      creatorDone(); renderTaskQueue();
+      break;
     case 'complete':
       creatorLog('All tasks complete!', 'success');
       document.getElementById('creator-status-text').textContent = 'Complete';
@@ -1605,6 +1776,13 @@ async function init() {
   state.mappings = await window.cloakedAPI.loadMappings();
   state.aliases  = await window.cloakedAPI.loadAliases();
   state.codes    = await window.cloakedAPI.loadCodes();
+  const savedQueue = await window.cloakedAPI.loadQueue();
+  state.tasks = savedQueue.map(t => {
+    if (t.status === 'pending')                              return { ...t, status: 'never-created' };
+    if (t.status === 'creating' || t.status === 'waiting')  return { ...t, status: 'failed' };
+    return t;
+  });
+  if (state.tasks.length) renderTaskQueue();
   const version  = await window.cloakedAPI.getVersion();
   document.getElementById('app-version-tag').textContent = `v${version}`;
   renderAll();

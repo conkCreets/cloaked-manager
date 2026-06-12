@@ -34,6 +34,10 @@ ipcMain.handle('remove-code-fingerprints', (_e, ids) => {
 ipcMain.handle('save-mappings', (_e, m) => { store.set('mappings', m); return { ok: true }; });
 ipcMain.handle('load-mappings', ()       => store.get('mappings', {}));
 
+// Creator queue
+ipcMain.handle('save-queue', (_e, q) => { store.set('creatorQueue', q); return { ok: true }; });
+ipcMain.handle('load-queue', ()       => store.get('creatorQueue', []));
+
 // Browser mode
 ipcMain.handle('save-browser-mode', (_e, mode) => { store.set('browserMode', mode); return { ok: true }; });
 ipcMain.handle('load-browser-mode', ()          => store.get('browserMode', 'headless'));

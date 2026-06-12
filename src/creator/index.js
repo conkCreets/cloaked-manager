@@ -1,13 +1,22 @@
-const { ipcMain } = require('electron');
+const { ipcMain, app } = require('electron');
+const path = require('path');
+const fs   = require('fs');
 const { store, dbg, getMainWindow } = require('../shared');
-const { launchBrowser }   = require('../scraper/browser');
-const { loginToCloaked }  = require('../scraper/login');
+const { launchBrowser }                          = require('../scraper/browser');
+const { checkAndRestoreSession, enableAdvancedMode } = require('../scraper/scrape');
+
+async function humanType(locator, text) {
+  await locator.click();
+  for (const char of text) {
+    await locator.pressSequentially(char, { delay: Math.floor(Math.random() * 120) + 60 });
+  }
+}
 
 function bellCurveDelay() {
   const u1 = Math.random(), u2 = Math.random();
   const z  = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-  const ms = Math.round((z * 25 + 110) * 1000);
-  return Math.max(60000, Math.min(180000, ms));
+  const ms = Math.round((z * 300 + 1800) * 1000);
+  return Math.max(1500000, Math.min(2100000, ms));
 }
 
 const creatorState = { running: false, paused: false, stopped: false, browser: null };
@@ -34,6 +43,21 @@ ipcMain.handle('creator-pause',  () => { creatorState.paused  = true;  dbg('crea
 ipcMain.handle('creator-resume', () => { creatorState.paused  = false; dbg('creator', 'info',    'Resumed by user');         return { ok: true }; });
 ipcMain.handle('creator-stop',   () => { creatorState.stopped = true; creatorState.paused = false; dbg('creator', 'warning', 'Stop requested by user'); return { ok: true }; });
 
+function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+async function runDelay(taskId, ms, label) {
+  const delaySec = Math.round(ms / 1000);
+  sendCreatorEvent('waiting', { id: taskId, delayMs: ms, delaySec, label });
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    if (creatorState.stopped) break;
+    while (creatorState.paused && !creatorState.stopped) await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 1000));
+    const remaining = Math.max(0, Math.round((ms - (Date.now() - start)) / 1000));
+    sendCreatorEvent('countdown', { id: taskId, remaining });
+  }
+}
+
 async function runCreator(tasks, email, password) {
   let browser;
   try {
@@ -41,15 +65,38 @@ async function runCreator(tasks, email, password) {
     dbg('creator', 'info', `=== CREATOR STARTED === ${tasks.length} task(s) | mode: ${mode}`);
     sendCreatorEvent('status', { message: 'Launching creator browser…' });
 
-    const { browser: b, context } = await launchBrowser(mode, 'creator');
+    const sp = path.join(app.getPath('userData'), 'session-state.json');
+    const hasSession = fs.existsSync(sp);
+    const { browser: b, context } = await launchBrowser(mode, 'creator', hasSession ? sp : null);
     browser = b;
     creatorState.browser = browser;
     const page = await context.newPage();
 
-    sendCreatorEvent('status', { message: 'Logging in…' });
-    await loginToCloaked(page, email, password, 'creator');
-    dbg('creator', 'success', 'Login complete — starting task loop');
-    sendCreatorEvent('status', { message: 'Logged in. Starting alias creation…' });
+    sendCreatorEvent('status', { message: hasSession ? 'Checking session…' : 'Logging in…' });
+    await checkAndRestoreSession(page, context, email, password, sp, 'creator', hasSession);
+    dbg('creator', 'success', hasSession ? 'Session restored' : 'Login complete');
+
+    sendCreatorEvent('status', { message: 'Enabling Advanced Mode…' });
+    await enableAdvancedMode(page, 'creator');
+    dbg('creator', 'success', 'Advanced Mode enabled');
+
+    sendCreatorEvent('status', { message: 'Navigating to identities…' });
+    await page.goto('https://my.cloaked.com/identities', { waitUntil: 'networkidle', timeout: 30000 });
+    await page.waitForTimeout(1000);
+    dbg('creator', 'success', 'Identities page loaded');
+    sendCreatorEvent('status', { message: 'Starting alias creation…' });
+
+    // Detect 429 rate limit on phone generation endpoint
+    let rateLimited = false;
+    page.on('response', res => {
+      if (res.status() === 429 && res.url().includes('/phone/')) {
+        rateLimited = true;
+        dbg('creator', 'error', `Rate limited by Cloaked (429) on ${res.url()}`);
+      }
+    });
+
+    let tasksSinceBreak = 0;
+    let nextBreakAt = randInt(5, 10);
 
     for (let i = 0; i < tasks.length; i++) {
       if (creatorState.stopped) { sendCreatorEvent('stopped', { message: 'Stopped by user.' }); break; }
@@ -57,91 +104,112 @@ async function runCreator(tasks, email, password) {
       if (creatorState.stopped) { sendCreatorEvent('stopped', { message: 'Stopped by user.' }); break; }
 
       const task = tasks[i];
-      dbg('creator', 'info', `--- Task ${i + 1}/${tasks.length}: "${task.accountName}" (${task.aliasType}) ---`);
-      sendCreatorEvent('task-start', { id: task.id, message: `Creating alias for ${task.accountName}…` });
+      dbg('creator', 'info', `--- Task ${i + 1}/${tasks.length}: "${task.username}" ---`);
+      sendCreatorEvent('task-start', { id: task.id, message: `Creating alias for ${task.username}…` });
 
       try {
-        dbg('creator', 'info', 'Navigating to dashboard…');
-        await page.goto('https://my.cloaked.com/auth/login', { waitUntil: 'networkidle', timeout: 30000 });
-        await page.waitForTimeout(1500);
-        dbg('creator', 'success', `Dashboard loaded — URL: ${page.url()}`);
+        const pause = (min, max) => page.waitForTimeout(randInt(min, max));
 
-        dbg('creator', 'verbose', 'Looking for create/add identity button…');
-        const createBtn = await page.$('[data-testid*="create"],[class*="create"],button:has-text("Create"),button:has-text("Add"),button:has-text("New"),[aria-label*="create" i],[aria-label*="add" i]');
-        if (!createBtn) {
-          const btns = await page.evaluate(() =>
-            [...document.querySelectorAll('button')].map(b => `"${b.innerText.trim()}"`)
-          );
-          dbg('creator', 'error', `Create button not found. Buttons on page: ${btns.join(', ') || 'none'}`);
-          throw new Error(`Could not find create identity button. Buttons found: ${btns.join(', ') || 'none'}`);
+        // Step 1: click "New identity" button
+        dbg('creator', 'info', 'Clicking "New identity" button…');
+        await page.locator('button.base-button--secondary-fill.navigation-left-panel__actions-button').click();
+        await pause(1000, 2000);
+
+        // Step 2: type account name into the search/add input
+        const nameInput = page.locator('[aria-id="SearchOrAddInput"]');
+        await nameInput.waitFor({ state: 'visible', timeout: 15000 });
+        await pause(500, 1000);
+        await humanType(nameInput, task.username);
+        dbg('creator', 'success', `Typed identity name: "${task.username}"`);
+        await pause(1500, 2500);
+
+        // Step 3: click the suggestion that appears
+        const suggestion = page.locator('li.section-list__item--active');
+        await suggestion.waitFor({ state: 'visible', timeout: 20000 });
+        await pause(800, 1500);
+        await suggestion.click();
+        dbg('creator', 'success', 'Clicked create suggestion — identity created');
+
+        // Step 4: wait for the detail panel to confirm creation
+        await page.locator('[aria-id="CloakNicknameInput"]').waitFor({ state: 'visible', timeout: 20000 });
+        await pause(1000, 2000);
+        dbg('creator', 'success', 'Detail panel open');
+
+        // Step 5: fill credentials (email goes into Username field; Email field left blank)
+        const fieldDelay = () => pause(600, 1400);
+        if (task.email) {
+          await humanType(page.locator('[aria-id="AddUsernameInput"]'), task.email);
+          dbg('creator', 'info', `Filled username with email: ${task.email}`);
+          await fieldDelay();
         }
-        dbg('creator', 'success', 'Create button found — clicking');
-        await createBtn.click();
-        await page.waitForTimeout(1500);
-
-        dbg('creator', 'info', `Selecting alias type: ${task.aliasType}`);
-        if (task.aliasType === 'phone') {
-          const opt = await page.$('[data-testid*="phone"],[class*="phone"],button:has-text("Phone"),label:has-text("Phone")');
-          if (opt) { await opt.click(); dbg('creator', 'success', 'Phone option selected'); }
-          else dbg('creator', 'warning', 'Phone option not found — may already be selected or not required');
-        } else {
-          const opt = await page.$('[data-testid*="email"],[class*="email"],button:has-text("Email"),label:has-text("Email")');
-          if (opt) { await opt.click(); dbg('creator', 'success', 'Email option selected'); }
-          else dbg('creator', 'warning', 'Email option not found — may already be selected or not required');
-        }
-        await page.waitForTimeout(1000);
-
-        dbg('creator', 'info', 'Looking for confirm/generate button…');
-        const confirmBtn = await page.$('button:has-text("Generate"),button:has-text("Create"),button:has-text("Confirm"),button:has-text("Next"),button[type="submit"]');
-        if (confirmBtn) { await confirmBtn.click(); dbg('creator', 'success', 'Confirm button clicked'); }
-        else dbg('creator', 'warning', 'No confirm button found — may have auto-confirmed');
-        await page.waitForTimeout(3000);
-
-        dbg('creator', 'info', 'Scraping newly created alias from page…');
-        const newAlias = await page.evaluate((type) => {
-          const text = document.body.innerText;
-          if (type === 'phone') {
-            const m = text.match(/(\+?1[\s\-.]?)?\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}/);
-            return m ? m[0].trim() : null;
-          } else {
-            const m = text.match(/[a-zA-Z0-9._%+\-]+@cloaked\.(app|com)/);
-            return m ? m[0] : null;
-          }
-        }, task.aliasType);
-
-        if (!newAlias) {
-          const pagePreview = await page.evaluate(() => document.body.innerText.substring(0, 400));
-          dbg('creator', 'error', `Could not detect new alias on page. Page text preview: ${pagePreview}`);
-          throw new Error('Alias created but could not detect the new value — check debug screenshots');
+        if (task.password) {
+          await humanType(page.locator('[aria-id="AddPasswordInput"]'), task.password);
+          dbg('creator', 'info', 'Filled password');
+          await fieldDelay();
         }
 
-        dbg('creator', 'success', `New alias detected: ${newAlias}`);
+        // Step 6: hover phone row to reveal Generate button, then click it
+        dbg('creator', 'info', 'Generating phone number…');
+        await pause(800, 1500);
+        await page.locator('[aria-id="AddPhoneInput"]').hover();
+        await pause(800, 1500);
+        await page.locator('[aria-id="CloakedDetailPhoneRow"] [aria-id="GenerateButton"]').click();
 
+        // Wait for phone value, but bail early if rate limited
+        await page.waitForFunction(
+          () => (document.querySelector('[aria-id="AddPhoneInput"]')?.value || '').length > 0,
+          { timeout: 20000 }
+        ).catch(() => {});
+
+        if (rateLimited) throw new Error('RATE_LIMITED');
+
+        await pause(1000, 2000);
+        const aliasValue = await page.locator('[aria-id="AddPhoneInput"]').inputValue();
+        dbg('creator', 'success', `Generated phone: ${aliasValue}`);
+
+        if (!aliasValue) throw new Error('Generate button clicked but no phone value appeared');
+
+        // Close the sidebar so "New Identity" is ready for the next task
+        await pause(800, 1500);
+        await page.locator('[aria-id="SidebarCloseButton"]').click();
+        await pause(1000, 2000);
+        dbg('creator', 'info', 'Sidebar closed');
+
+        // Save mapping
         const mappings = store.get('mappings', {});
-        const newId    = `created-${Date.now()}`;
-        mappings[newId] = { label: task.accountName, forwardTo: '' };
+        const newId = `created-${Date.now()}`;
+        mappings[newId] = { label: task.username, forwardTo: '' };
         store.set('mappings', mappings);
-        dbg('creator', 'success', `Mapping saved: "${task.accountName}" → ${newAlias} (id: ${newId})`);
+        dbg('creator', 'success', `Mapping saved: "${task.username}" → ${aliasValue}`);
 
-        sendCreatorEvent('task-done', { id: task.id, aliasValue: newAlias, aliasType: task.aliasType, accountName: task.accountName, mappingId: newId });
+        sendCreatorEvent('task-done', { id: task.id, aliasValue, username: task.username, email: task.email, password: task.password, mappingId: newId });
 
       } catch (err) {
+        if (err.message === 'RATE_LIMITED') {
+          dbg('creator', 'error', 'Rate limited by Cloaked — stopping creator');
+          sendCreatorEvent('task-failed', { id: task.id, error: 'Rate limited by Cloaked — try again later' });
+          sendCreatorEvent('rate-limited', { message: 'Cloaked has rate limited phone number generation. Try again in ~21 hours.' });
+          break;
+        }
         dbg('creator', 'error', `Task failed: ${err.message}`);
+        dbg('creator', 'verbose', err.stack || '(no stack)');
         sendCreatorEvent('task-failed', { id: task.id, error: err.message });
       }
 
+      tasksSinceBreak++;
+
       if (i < tasks.length - 1 && !creatorState.stopped) {
-        const delay    = bellCurveDelay();
-        const delaySec = Math.round(delay / 1000);
-        dbg('creator', 'info', `Waiting ${delaySec}s before next task (bell-curve delay)`);
-        sendCreatorEvent('waiting', { id: task.id, delayMs: delay, delaySec });
-        const start = Date.now();
-        while (Date.now() - start < delay) {
-          if (creatorState.stopped) break;
-          while (creatorState.paused && !creatorState.stopped) await new Promise(r => setTimeout(r, 500));
-          await new Promise(r => setTimeout(r, 1000));
-          const remaining = Math.max(0, Math.round((delay - (Date.now() - start)) / 1000));
-          sendCreatorEvent('countdown', { id: task.id, remaining });
+        const delay = bellCurveDelay();
+        dbg('creator', 'info', `Waiting ${Math.round(delay / 60000)}min before next task (bell-curve delay)`);
+        await runDelay(task.id, delay, 'Waiting before next alias…');
+
+        if (!creatorState.stopped && tasksSinceBreak >= nextBreakAt) {
+          const breakMs  = randInt(5, 10) * 60 * 1000;
+          const breakMin = Math.round(breakMs / 60000);
+          dbg('creator', 'info', `Taking a ${breakMin}min break after ${tasksSinceBreak} tasks`);
+          await runDelay(task.id, breakMs, `Taking a ${breakMin}min break…`);
+          tasksSinceBreak = 0;
+          nextBreakAt = randInt(5, 10);
         }
       }
     }

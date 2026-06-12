@@ -30,6 +30,10 @@ contextBridge.exposeInMainWorld('cloakedAPI', {
   saveMappings: (m) => ipcRenderer.invoke('save-mappings', m),
   loadMappings: ()  => ipcRenderer.invoke('load-mappings'),
 
+  // Creator queue
+  saveQueue: (q) => ipcRenderer.invoke('save-queue', q),
+  loadQueue: ()  => ipcRenderer.invoke('load-queue'),
+
   // Scraper
   syncCloaked: (creds) => ipcRenderer.invoke('sync-cloaked', creds),
   syncCodes:   (creds) => ipcRenderer.invoke('sync-codes',   creds),
